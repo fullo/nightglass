@@ -5,7 +5,7 @@
 Injects window.claude.use('desktop') backed by a real folder on this machine
 (FAKE_HOME), so the LIVE DISK mode can be tested in Chromium with Playwright.
 fs.*, shell.trashItem (moves into FAKE_TRASH), childProcess.exec (real shell,
-used by git) and a minimal pty that runs each line through the real shell are provided.
+used by git; tests/fakebin/ssh stands in for ssh) and a minimal pty that runs each line through the real shell are provided.
 """
 import os, base64, shutil, subprocess
 
@@ -46,8 +46,11 @@ async def fsop(op, args):
     except FileExistsError as e: return {'err': 'EEXIST: ' + str(e)}
     except OSError as e: return {'err': 'EIO: ' + str(e)}
 
+FAKEBIN = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'fakebin')
+
 async def sh(cmd, opts):
-    r = subprocess.run(cmd, shell=True, capture_output=True, timeout=30)
+    env = {**os.environ, 'PATH': FAKEBIN + os.pathsep + os.environ.get('PATH', '')}
+    r = subprocess.run(cmd, shell=True, capture_output=True, timeout=60, env=env)
     return {'stdout': r.stdout.decode('utf-8', 'replace'), 'stderr': r.stderr.decode('utf-8', 'replace'),
             'code': r.returncode, 'signal': None, 'truncated': False}
 

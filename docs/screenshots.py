@@ -107,6 +107,13 @@ async def main():
         await shot(lv, '11-git-browse')
         await lcmd('git log --oneline', 1200)
         await shot(lv, '14-terminal'); await k.press('Control+o')
+        srv = os.environ.get('NG_FAKE_SERVER', '/tmp/ng-fakeserver'); shutil.rmtree(srv, ignore_errors=True)
+        os.makedirs(srv + '/www/site/assets'); open(srv + '/www/site/index.html', 'w').write('<h1>Lab</h1>\n'); open(srv + '/www/site/style.css', 'w').write('body{margin:0}\n'); open(srv + '/www/site/assets/logo.svg', 'w').write('<svg/>')
+        await lv.wait_for_timeout(300); await k.press('Control+x'); await k.press('g'); await lv.wait_for_timeout(500); await lv.click('#dd [data-mi="0"]'); await lv.wait_for_timeout(800)
+        await lcmd('cd ~/Documents')
+        await k.press('Tab'); await k.press('Control+x'); await k.press('s'); await lv.wait_for_selector('#din'); await lv.fill('#din', 'deploy@lab-server' + srv + '/www/site'); await k.press('Enter'); await lv.wait_for_timeout(1500)
+        await k.press('Tab'); await k.press('Insert'); await k.press('Insert'); await lv.wait_for_timeout(200)
+        await shot(lv, '16-ssh')
 
         ph = await b.new_page(viewport={'width': 390, 'height': 780}, has_touch=True, is_mobile=True)
         await ph.goto(URL); await ph.wait_for_timeout(1200); await shot(ph, '15-phone')

@@ -17,13 +17,15 @@ Due pannelli, barra dei menu, riga di comando e tasti F1–F10 come in MC. Tab c
 | ![Editor con evidenziazione](docs/screenshots/05-editor.png) | ![Editor esadecimale](docs/screenshots/06-hex-editor.png) |
 | **F4 editor**: salva con F2, mantiene a capo CRLF e BOM. | **Editor esadecimale** (F3 › F4 › F2): byte modificati in rosso, F6 salva, F7 cerca byte. |
 | ![Quick view di un documento ODT](docs/screenshots/07-quick-view.png) | ![Rinomina in blocco con regex](docs/screenshots/08-batch-rename.png) |
-| **Quick view** (C-x q): l'altro pannello mostra l'anteprima del file sotto il cursore. | **Rinomina in blocco** (C-x r): regex, contatori, date, anteprima con conflitti, annullabile. |
+| **Quick view** (Ctrl-X q): l'altro pannello mostra l'anteprima del file sotto il cursore. | **Rinomina in blocco** (Ctrl-X r): regex, contatori, date, anteprima con conflitti, annullabile. |
 | ![Console con ls, grep e tree](docs/screenshots/02-console.png) | ![Navigazione dentro un archivio tgz](docs/screenshots/09-archive.png) |
-| **Console** (disco demo): ls, cat, grep, find, tree, du, tar, con `>` e `>>`. | **Archivi**: Invio entra in tar/tgz/zip, F5 estrae, C-x p crea, C-x u estrae tutto. |
+| **Console** (disco demo): ls, cat, grep, find, tree, du, tar, con `>` e `>>`. | **Archivi**: Invio entra in tar/tgz/zip, F5 estrae, Ctrl-X p crea, Ctrl-X u estrae tutto. |
 | ![Elenco dei branch Git](docs/screenshots/10-git-branches.png) | ![Branch sfogliato in sola lettura](docs/screenshots/11-git-browse.png) |
-| **Git** (C-x g): branch attuale nel titolo, stato dei file (M, ?), elenco dei branch. | **Sfogliare un branch** in sola lettura senza checkout; a destra la copia di lavoro. |
+| **Git** (Ctrl-X g): branch attuale nel titolo, stato dei file (M, ?), elenco dei branch. | **Sfogliare un branch** in sola lettura senza checkout; a destra la copia di lavoro. |
 | ![Terminale vero con Ctrl-O](docs/screenshots/14-terminal.png) | ![Manuale integrato](docs/screenshots/13-manual.png) |
 | **Terminale** (Ctrl-O, app desktop): la shell vera nella cartella del pannello. | **Manuale** (F1, in italiano): indice, collegamenti, ricerca, contestuale. |
+| ![Pannello collegato a un server via SSH](docs/screenshots/16-ssh.png) | |
+| **Server remoti** (Ctrl-X s, app desktop): un pannello su un server via SSH; F5/F6 copiano e spostano fra locale e server, F4 modifica sul server. | |
 
 **Skin**: 12 schemi colore, che valgono anche per il codice e il terminale. Qui Dracula, Eclipse e Neon:
 
@@ -68,16 +70,17 @@ Lo script è un unico blocco `{ … }` diviso in sezioni marcate da commenti `/*
 | syntax highlighting | highlight.js con colori presi dalla skin |
 | quick view | anteprima nell'altro pannello |
 | archives | parser e writer tar, gzip con `CompressionStream`, zip con JSZip, filesystem virtuale `arcFS` |
+| ssh | `sshFS`: server remoto via il client `ssh` di sistema; percorsi virtuali `/@ssh/<target>/…` |
 | git | `git` via `childProcess.exec`, stato dei file, filesystem virtuale `gitFS` per sfogliare un branch |
 | editor | F4, textarea con overlay evidenziato |
 | manual | il manuale F1, contenuto in `MAN` |
 | menus, dialogs, command line, console, keyboard, mouse | interfaccia |
 | skins | 12 schemi colore come liste di variabili CSS (`SKINS`, `SYN`) |
 | subshell | terminale vero (xterm.js + `desktop.pty`) |
-| compare, batch rename | C-x d, C-x r |
+| compare, batch rename | Ctrl-X d, Ctrl-X r |
 | desktop app | installazione, permesso di accesso completo, passaggio a LIVE DISK |
 
-Il punto chiave è `FS(p)`: restituisce il backend giusto per un pannello. Può essere il disco (`Demo` o `Live`), un archivio aperto (`arcFS`) o un branch Git sfogliato (`gitFS`). Tutti espongono `list`, `stat`, `exists`, `readBytes`; solo `Demo` e `Live` scrivono. Le operazioni che scrivono passano da `roGuard()`.
+Il punto chiave è `FS(p)`: restituisce il backend giusto per un pannello. Può essere il disco (`Demo` o `Live`), un archivio aperto (`arcFS`), un branch Git sfogliato (`gitFS`) o un server SSH (`sshFS`). `fsAt(percorso)` fa lo stesso per una destinazione. Tutti espongono `list`, `stat`, `exists`, `readBytes`; `Demo`, `Live` e `sshFS` scrivono anche. Le operazioni che scrivono passano da `roGuard()`.
 
 `mode` dice cosa è in primo piano: `panels`, `view`, `edit`, `con` (console demo), `term` (terminale), `man` (manuale). La tastiera è gestita in un solo listener, in quest'ordine: dialoghi, manuale, terminale, tasti funzione, console, menu, visualizzatore/editor, pannelli.
 
@@ -94,26 +97,26 @@ Due cose da sapere:
 
 Modalità demo: apri `index.html` nel browser (anche da `file://`), oppure servi la cartella con `python3 -m http.server` e apri `http://localhost:8000`. Fuori dal sito di Claude `claude.use` non esiste, quindi l'app resta sul disco demo e non sincronizza.
 
-Modalità LIVE DISK senza il Claude desktop app: `tests/harness.py` inietta una finta API desktop che lavora su una cartella vera (`/tmp/ng-fakehome`, cambiabile con `NG_FAKE_HOME`). Il Cestino finisce in `/tmp/ng-faketrash`, e `git` e la shell sono quelli della macchina.
+Modalità LIVE DISK senza il Claude desktop app: `tests/harness.py` inietta una finta API desktop che lavora su una cartella vera (`/tmp/ng-fakehome`, cambiabile con `NG_FAKE_HOME`). Il Cestino finisce in `/tmp/ng-faketrash`, e `git` e la shell sono quelli della macchina. `tests/fakebin/ssh` sostituisce `ssh`: esegue i comandi "remoti" in locale, nella cartella `/tmp/ng-fakeserver`.
 
 ```
 pip install playwright && playwright install chromium
 python3 tests/smoke.py
 ```
 
-Il test crea la cartella finta con un piccolo repository Git, prova disco demo, console, `tar`, anteprima PDF, manuale, modalità LIVE DISK, icona, stato Git e browsing di un branch. Gli screenshot vanno in `tests/out/`.
+Il test crea la cartella finta con un piccolo repository Git, prova disco demo, console, `tar`, anteprima PDF, manuale, modalità LIVE DISK, icona, stato Git, browsing di un branch, collegamento SSH e upload. Gli screenshot vanno in `tests/out/`.
 
 ## Regole del codice
 
 - I valori che arrivano dal disco (nomi di file, contenuti, output di git) non finiscono mai in HTML senza `esc()`. I documenti DOCX/ODT si mostrano in un `iframe` con `sandbox=""`.
 - Cancellare sul disco vero significa `shell.trashItem`, mai `fs.rm` (unica eccezione: l'annulla di un file vuoto appena creato).
 - Le librerie in `vendor/` si caricano solo quando servono, con `lib(src, globale)`.
-- Mantieni le scorciatoie di MC quando esistono; le nuove vanno sotto `Ctrl-X <lettera>`.
+- Mantieni le scorciatoie di MC quando esistono; le nuove vanno sotto `Ctrl-X <lettera>`. Nell'interfaccia scrivi i tasti per esteso (`Ctrl-X`, `Alt-I`, `Shift-F4`), non con la notazione `C-x` di MC.
 - Ogni funzione nuova va anche nel manuale (`MAN`) e, se ha un tasto, nella sezione "Tutte le scorciatoie".
 
 ## Idee aperte
 
-Hotlist delle cartelle (C-\\), ricerca rapida digitando (C-s), cronologia delle cartelle, "Find file" con risultati nel pannello, chmod/symlink, pipe nella console demo, diff affiancato fra due file, selezione con Shift+frecce.
+Hotlist delle cartelle (Ctrl-\\), ricerca rapida digitando (Ctrl-S), cronologia delle cartelle, "Find file" con risultati nel pannello, chmod/symlink, pipe nella console demo, diff affiancato fra due file, selezione con Shift+frecce.
 
 ## Licenza
 
