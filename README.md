@@ -1,127 +1,180 @@
 # Nightglass File System
 
-File manager a due pannelli sul modello di Midnight Commander, pubblicato come artifact di Claude e installabile come app desktop dal Claude desktop app. Nel browser lavora su un disco demo con file inventati; installato come app lavora sui file veri del computer.
+A two-panel file manager modelled on Midnight Commander. It runs as a [Claude](https://claude.ai) artifact and installs as a desktop app from the Claude desktop app. In a browser it works on a demo drive with made-up files; installed as an app it works on the real files of your computer, with Git, a real terminal and SSH.
 
-Il manuale utente è dentro l'app (F1, in italiano). Questo file è per chi mette mano al codice.
+![Two Midnight Commander style panels, with two files marked](docs/screenshots/01-panels.png)
 
-## Funzionalità
+- [Install it on your own Claude account](#install-it-on-your-own-claude-account)
+- [Features](#features)
+- [How the code is organised](#how-the-code-is-organised)
+- [Running it locally and testing](#running-it-locally-and-testing)
+- [License](#license)
 
-![Due pannelli in stile Midnight Commander, con due file marcati](docs/screenshots/01-panels.png)
+## Install it on your own Claude account
 
-Due pannelli, barra dei menu, riga di comando e tasti F1–F10 come in MC. Tab cambia pannello, Ctrl-T o Ins marcano i file, F5/F6/F7/F8 copiano, spostano, creano cartelle e cancellano (sul disco vero F8 sposta nel Cestino).
+Nightglass can read, write and delete files and run commands on your computer. Claude only grants that access to an app that belongs to **your** account and that nobody else has written to. So you cannot use someone else's copy on your disk: you publish your own copy from this repository, and install that. It takes about five minutes.
+
+### What you need
+
+- A Claude account, signed in to the **Claude desktop app** on macOS or Windows.
+- A Claude conversation that can create artifacts (published pages). If Claude answers that it cannot publish artifacts, check that artifacts are turned on in your Claude settings.
+- For Git, `git` installed on your computer. For SSH, the `ssh` command (built into macOS, Linux and recent Windows) and your SSH keys.
+
+### Steps
+
+1. **Download the code.** On this page click **Code › Download ZIP** and unzip it. You get a folder called `nightglass-main`.
+
+2. **Give the folder to Claude.** In the Claude desktop app, start a new conversation, click **+** and choose **Add folder**, then pick the `nightglass-main` folder.
+
+3. **Ask Claude to publish it.** Send this message:
+
+   > Publish this folder as my own artifact by following the instructions in its CLAUDE.md file.
+
+   Claude reads [`CLAUDE.md`](CLAUDE.md), publishes `index.html` with the `vendor/` and `icons/` folders, and turns on the app permissions. A card with your new artifact appears in the conversation. Nothing is sent to anyone else: the artifact is private to you.
+
+4. **Install it as an app.** Open the artifact in the Claude desktop app (not in a web browser). In the hint line at the bottom, click **Install as app**, and confirm.
+
+5. **Open it and grant access.** Open **Nightglass** from the Dock (macOS) or the Start menu (Windows). In the hint line, click **Grant full access**, and confirm in the dialog. The top right corner switches from `DEMO DRIVE` to `LIVE DISK`: you are now on your real files, starting from your home folder.
+
+6. **Read the manual.** Press **F1** inside the app. The manual is in Italian; the interface and key names are in English.
+
+### Before you grant access
+
+"Full access" lets the app read, change and delete your files and run commands, without asking again. The whole app is the single file `index.html` in this repository (plus well-known libraries in `vendor/`), so you can read what it does before you install it. Inside the app, **F8** moves files to the system Trash instead of deleting them, except on SSH servers, which have no Trash.
+
+### Updating
+
+Claude asks for full access again every time a new version is published. To update:
+
+1. download the new ZIP from this repository and unzip it over the old folder;
+2. in Claude, add the folder again and send: *"Update my Nightglass artifact from this folder by following CLAUDE.md."* Keep the same artifact rather than creating a new one, so the installed app keeps its place;
+3. open Nightglass and grant full access again.
+
+### Just trying it
+
+Open `index.html` from the downloaded folder in any web browser. It runs on the demo drive: the panels, viewer, editor, archives and console work, but not the real disk, Git, the terminal or SSH.
+
+### If something goes wrong
+
+| Problem | What to do |
+|---|---|
+| No **Install as app** button | Open the artifact in the Claude desktop app, not in a web browser. |
+| **Grant full access** never appears, or says it is not available | Make sure you are using your own copy, published from your own account, and that nobody else edited it. |
+| Stays on `DEMO DRIVE` after granting access | Quit Nightglass and open it again from the Dock or Start menu. |
+| SSH says "Permission denied" | Use **Login in terminal** in the Shell link dialog (Ctrl-X s) to type the password or accept the server key once. |
+| Git features missing | Install `git` and make sure it works in a terminal. |
+
+## Features
 
 | | |
 |---|---|
-| ![Visualizzatore con evidenziazione della sintassi](docs/screenshots/03-viewer-code.png) | ![Anteprima di un PDF](docs/screenshots/04-preview-pdf.png) |
-| **F3 visualizzatore**: testo con evidenziazione della sintassi in circa 35 linguaggi. | **Anteprime**: immagini (anche TIFF), PDF, DOCX, ODT/ODS/ODP, audio e video. |
-| ![Editor con evidenziazione](docs/screenshots/05-editor.png) | ![Editor esadecimale](docs/screenshots/06-hex-editor.png) |
-| **F4 editor**: salva con F2, mantiene a capo CRLF e BOM. | **Editor esadecimale** (F3 › F4 › F2): byte modificati in rosso, F6 salva, F7 cerca byte. |
-| ![Quick view di un documento ODT](docs/screenshots/07-quick-view.png) | ![Rinomina in blocco con regex](docs/screenshots/08-batch-rename.png) |
-| **Quick view** (Ctrl-X q): l'altro pannello mostra l'anteprima del file sotto il cursore. | **Rinomina in blocco** (Ctrl-X r): regex, contatori, date, anteprima con conflitti, annullabile. |
-| ![Console con ls, grep e tree](docs/screenshots/02-console.png) | ![Navigazione dentro un archivio tgz](docs/screenshots/09-archive.png) |
-| **Console** (disco demo): ls, cat, grep, find, tree, du, tar, con `>` e `>>`. | **Archivi**: Invio entra in tar/tgz/zip, F5 estrae, Ctrl-X p crea, Ctrl-X u estrae tutto. |
-| ![Elenco dei branch Git](docs/screenshots/10-git-branches.png) | ![Branch sfogliato in sola lettura](docs/screenshots/11-git-browse.png) |
-| **Git** (Ctrl-X g): branch attuale nel titolo, stato dei file (M, ?), elenco dei branch. | **Sfogliare un branch** in sola lettura senza checkout; a destra la copia di lavoro. |
-| ![Terminale vero con Ctrl-O](docs/screenshots/14-terminal.png) | ![Manuale integrato](docs/screenshots/13-manual.png) |
-| **Terminale** (Ctrl-O, app desktop): la shell vera nella cartella del pannello. | **Manuale** (F1, in italiano): indice, collegamenti, ricerca, contestuale. |
-| ![Pannello collegato a un server via SSH](docs/screenshots/16-ssh.png) | |
-| **Server remoti** (Ctrl-X s, app desktop): un pannello su un server via SSH; F5/F6 copiano e spostano fra locale e server, F4 modifica sul server. | |
+| ![Viewer with syntax highlighting](docs/screenshots/03-viewer-code.png) | ![PDF preview](docs/screenshots/04-preview-pdf.png) |
+| **F3 viewer**: text with syntax highlighting for about 35 languages. | **Previews**: images (TIFF too), PDF, DOCX, ODT/ODS/ODP, audio and video. |
+| ![Editor with highlighting](docs/screenshots/05-editor.png) | ![Hex editor](docs/screenshots/06-hex-editor.png) |
+| **F4 editor**: F2 saves; CRLF line endings and BOM are kept. | **Hex editor** (F3 › F4 › F2): changed bytes in red, F6 saves, F7 searches bytes. |
+| ![Quick view of an ODT document](docs/screenshots/07-quick-view.png) | ![Batch rename with a regex](docs/screenshots/08-batch-rename.png) |
+| **Quick view** (Ctrl-X q): the other panel previews the file under the cursor. | **Batch rename** (Ctrl-X r): regex, counters, dates, live preview with conflicts, undo. |
+| ![Console with ls, grep and tree](docs/screenshots/02-console.png) | ![Inside a tgz archive](docs/screenshots/09-archive.png) |
+| **Console** (demo drive): ls, cat, grep, find, tree, du, tar, with `>` and `>>`. | **Archives**: Enter opens tar/tgz/zip, F5 extracts, Ctrl-X p packs, Ctrl-X u unpacks. |
+| ![Git branch list](docs/screenshots/10-git-branches.png) | ![A branch browsed read-only](docs/screenshots/11-git-browse.png) |
+| **Git** (Ctrl-X g): current branch in the title, file status (M, ?), branch list. | **Browse a branch** read-only without checking it out; the working tree on the right. |
+| ![Real terminal with Ctrl-O](docs/screenshots/14-terminal.png) | ![Built-in manual](docs/screenshots/13-manual.png) |
+| **Terminal** (Ctrl-O, desktop app): your real shell in the panel's folder. | **Manual** (F1, in Italian): contents, links, search, opens on the right page. |
+| ![A panel connected to a server over SSH](docs/screenshots/16-ssh.png) | |
+| **Remote servers** (Ctrl-X s, desktop app): a panel on a server over SSH; F5/F6 copy and move between your disk and the server, F4 edits on the server. | |
 
-**Skin**: 12 schemi colore, che valgono anche per il codice e il terminale. Qui Dracula, Eclipse e Neon:
+**Skins**: 12 colour schemes, which also apply to code and the terminal. Dracula, Eclipse and Neon:
 
 | | | |
 |---|---|---|
-| ![Skin Dracula](docs/screenshots/12-skin-dracula.png) | ![Skin Eclipse](docs/screenshots/12-skin-eclipse.png) | ![Skin Neon](docs/screenshots/12-skin-neon.png) |
+| ![Dracula skin](docs/screenshots/12-skin-dracula.png) | ![Eclipse skin](docs/screenshots/12-skin-eclipse.png) | ![Neon skin](docs/screenshots/12-skin-neon.png) |
 
-<img src="docs/screenshots/15-phone.png" alt="Su telefono un pannello alla volta" width="260" align="right">
+<img src="docs/screenshots/15-phone.png" alt="On a phone, one panel at a time" width="260" align="right">
 
-**Telefono**: un pannello alla volta, tasti funzione su due righe, Tab per passare all'altro pannello.
+**Phone**: one panel at a time, function keys on two rows, a Tab key to switch panel.
 
-Gli screenshot si rigenerano con `python3 docs/screenshots.py` (stessi requisiti dei test).
+Key names follow Midnight Commander, written out in full: `Ctrl-X q` means press Ctrl+X, release, then press q.
 
 <br clear="right">
 
-## Struttura
+## How the code is organised
 
 ```
-index.html          tutta l'app: HTML, CSS e JavaScript in un file
-vendor/             librerie di terze parti, caricate su richiesta (vedi THIRD_PARTY.md)
-icons/              icona dell'app (icon.svg è il sorgente, i PNG sono generati)
-tests/harness.py    finta API desktop per provare la modalità LIVE DISK nel browser
-tests/smoke.py      test di fumo con Playwright
-docs/screenshots.py rigenera gli screenshot del README in docs/screenshots/
+index.html          the whole app: HTML, CSS and JavaScript in one file
+vendor/             third-party libraries, loaded on demand (see THIRD_PARTY.md)
+icons/              app icon (icon.svg is the source, the PNGs are generated)
+CLAUDE.md           instructions Claude follows to publish, install and change the app
+tests/harness.py    fake Claude desktop API to test LIVE DISK mode in a browser
+tests/fakebin/ssh   fake ssh that runs "remote" commands in a local folder
+tests/smoke.py      Playwright smoke test
+docs/screenshots.py regenerates the screenshots in docs/screenshots/
 ```
 
-Nessun build: si modifica `index.html` e si ricarica.
+There is no build step: edit `index.html` and reload.
 
-## Come gira
+The script is one `{ … }` block split into sections marked with `/* ---------- name ---------- */` comments, in this order:
 
-Lo script è un unico blocco `{ … }` diviso in sezioni marcate da commenti `/* ---------- nome ---------- */`, in quest'ordine:
-
-| Sezione | Cosa contiene |
+| Section | What it holds |
 |---|---|
-| paths | percorsi sempre con `/`, anche su Windows (`C:/Users/…`) |
-| demo backend | `Demo`: disco virtuale salvato in `localStorage` e, se disponibile, nel database dell'artifact (`db`, documento per utente) |
-| live backend | `Live`: disco vero tramite `claude.use('desktop')` (fs, shell, os) |
-| state / panels | stato dei due pannelli `P[0]`, `P[1]`, rendering, `cd`, `reload` |
-| file operations | copia ricorsiva, spostamento, mkdir, cancellazione |
-| previews | anteprime: immagini, TIFF (UTIF), PDF (pdf.js), DOCX (mammoth), ODF (JSZip), audio/video |
-| viewer | F3, dump esadecimale virtualizzato ed editor esadecimale |
-| syntax highlighting | highlight.js con colori presi dalla skin |
-| quick view | anteprima nell'altro pannello |
-| archives | parser e writer tar, gzip con `CompressionStream`, zip con JSZip, filesystem virtuale `arcFS` |
-| ssh | `sshFS`: server remoto via il client `ssh` di sistema; percorsi virtuali `/@ssh/<target>/…` |
-| git | `git` via `childProcess.exec`, stato dei file, filesystem virtuale `gitFS` per sfogliare un branch |
-| editor | F4, textarea con overlay evidenziato |
-| manual | il manuale F1, contenuto in `MAN` |
-| menus, dialogs, command line, console, keyboard, mouse | interfaccia |
-| skins | 12 schemi colore come liste di variabili CSS (`SKINS`, `SYN`) |
-| subshell | terminale vero (xterm.js + `desktop.pty`) |
+| paths | paths always use `/`, on Windows too (`C:/Users/…`) |
+| demo backend | `Demo`: a virtual drive kept in `localStorage` and, when available, in the artifact's database (`db`, one document per user) |
+| live backend | `Live`: the real disk through `claude.use('desktop')` (fs, shell, os) |
+| state / panels | the two panels `P[0]` and `P[1]`, rendering, `cd`, `reload` |
+| file operations | recursive copy, move, mkdir, delete |
+| previews | images, TIFF (UTIF), PDF (pdf.js), DOCX (mammoth), ODF (JSZip), audio and video |
+| viewer | F3, a virtualised hex dump and the hex editor |
+| syntax highlighting | highlight.js, coloured from the current skin |
+| quick view | preview in the other panel |
+| archives | tar reader and writer, gzip through `CompressionStream`, zip through JSZip, virtual filesystem `arcFS` |
+| ssh | `sshFS`: a remote server through the system `ssh` client; virtual paths `/@ssh/<target>/…` |
+| git | `git` through `childProcess.exec`, file status, virtual filesystem `gitFS` to browse a branch |
+| editor | F4, a textarea with a highlighted overlay |
+| manual | the F1 manual, content in `MAN` (Italian) |
+| menus, dialogs, command line, console, keyboard, mouse | user interface |
+| skins | 12 colour schemes as lists of CSS variables (`SKINS`, `SYN`) |
+| subshell | real terminal (xterm.js + `desktop.pty`) |
 | compare, batch rename | Ctrl-X d, Ctrl-X r |
-| desktop app | installazione, permesso di accesso completo, passaggio a LIVE DISK |
+| desktop app | install, full-access permission, switch to LIVE DISK |
 
-Il punto chiave è `FS(p)`: restituisce il backend giusto per un pannello. Può essere il disco (`Demo` o `Live`), un archivio aperto (`arcFS`), un branch Git sfogliato (`gitFS`) o un server SSH (`sshFS`). `fsAt(percorso)` fa lo stesso per una destinazione. Tutti espongono `list`, `stat`, `exists`, `readBytes`; `Demo`, `Live` e `sshFS` scrivono anche. Le operazioni che scrivono passano da `roGuard()`.
+The key function is `FS(p)`: it returns the right backend for a panel. That is the disk (`Demo` or `Live`), an open archive (`arcFS`), a browsed Git branch (`gitFS`) or an SSH server (`sshFS`). `fsAt(path)` does the same for a destination path. All of them provide `list`, `stat`, `exists` and `readBytes`; `Demo`, `Live` and `sshFS` can also write. Every write goes through `roGuard()` first.
 
-`mode` dice cosa è in primo piano: `panels`, `view`, `edit`, `con` (console demo), `term` (terminale), `man` (manuale). La tastiera è gestita in un solo listener, in quest'ordine: dialoghi, manuale, terminale, tasti funzione, console, menu, visualizzatore/editor, pannelli.
+`mode` says what is in front: `panels`, `view`, `edit`, `con` (demo console), `term` (terminal), `man` (manual). One keyboard listener handles everything, in this order: dialogs, manual, terminal, function keys, console, menus, viewer/editor, panels.
 
-## Capability dell'artifact
+### Artifact capabilities
 
-L'artifact dichiara `db`, `user` e `desktop`. I permessi desktop sono nel tag `<script id="claude-artifacts-manifest">` in testa a `index.html`: oggi solo `"full-access"`, che serve per fs, shell, terminale e Git.
+The artifact declares the `db`, `user` and `desktop` capabilities. The desktop permissions are in the `<script id="claude-artifacts-manifest">` tag at the top of `index.html`: only `"full-access"`, which covers fs, shell, terminal, Git and SSH. See [`CLAUDE.md`](CLAUDE.md) for how they are set when publishing.
 
-Due cose da sapere:
+### Rules for changes
 
-- Il permesso di accesso completo si richiede di nuovo a ogni nuova versione pubblicata.
-- L'accesso completo funziona solo se nessuno **fuori dall'organizzazione** del proprietario ha scritto nell'artifact. Un collaboratore esterno deve lavorare su una copia, non sull'artifact originale.
+- Values that come from the disk (file names, contents, git and ssh output) never go into HTML without `esc()`. DOCX and ODT documents render in an `iframe` with `sandbox=""`.
+- Deleting on the real disk means `shell.trashItem`, never `fs.rm` (the one exception: undoing an empty file the app just created).
+- Libraries in `vendor/` load only when needed, through `lib(src, global)`.
+- Keep Midnight Commander's keys where they exist; new ones go under `Ctrl-X <letter>`. Write keys out in full in the interface (`Ctrl-X`, `Alt-I`, `Shift-F4`), not in MC's `C-x` notation.
+- Every new feature also goes into the manual (`MAN`) and, if it has a key, into its "Tutte le scorciatoie" section.
+- Run `python3 tests/smoke.py` before publishing.
 
-## Provare in locale
+## Running it locally and testing
 
-Modalità demo: apri `index.html` nel browser (anche da `file://`), oppure servi la cartella con `python3 -m http.server` e apri `http://localhost:8000`. Fuori dal sito di Claude `claude.use` non esiste, quindi l'app resta sul disco demo e non sincronizza.
+Demo mode: open `index.html` in a browser (from `file://` too), or serve the folder with `python3 -m http.server` and open `http://localhost:8000`. Outside Claude, `claude.use` does not exist, so the app stays on the demo drive and does not sync.
 
-Modalità LIVE DISK senza il Claude desktop app: `tests/harness.py` inietta una finta API desktop che lavora su una cartella vera (`/tmp/ng-fakehome`, cambiabile con `NG_FAKE_HOME`). Il Cestino finisce in `/tmp/ng-faketrash`, e `git` e la shell sono quelli della macchina. `tests/fakebin/ssh` sostituisce `ssh`: esegue i comandi "remoti" in locale, nella cartella `/tmp/ng-fakeserver`.
+LIVE DISK mode without the Claude desktop app: `tests/harness.py` injects a fake desktop API that works on a real folder (`/tmp/ng-fakehome`, change it with `NG_FAKE_HOME`). The Trash goes to `/tmp/ng-faketrash`; `git` and the shell are your machine's. `tests/fakebin/ssh` stands in for `ssh` and runs the "remote" commands in `/tmp/ng-fakeserver`.
 
 ```
 pip install playwright && playwright install chromium
 python3 tests/smoke.py
+python3 docs/screenshots.py
 ```
 
-Il test crea la cartella finta con un piccolo repository Git, prova disco demo, console, `tar`, anteprima PDF, manuale, modalità LIVE DISK, icona, stato Git, browsing di un branch, collegamento SSH e upload. Gli screenshot vanno in `tests/out/`.
+The smoke test builds the fake folder with a small Git repository, then checks the demo drive, console, `tar`, PDF preview, manual, LIVE DISK mode, app icon, Git status, browsing a branch, an SSH connection and an upload. Screenshots go to `tests/out/`.
 
-## Regole del codice
+## Open ideas
 
-- I valori che arrivano dal disco (nomi di file, contenuti, output di git) non finiscono mai in HTML senza `esc()`. I documenti DOCX/ODT si mostrano in un `iframe` con `sandbox=""`.
-- Cancellare sul disco vero significa `shell.trashItem`, mai `fs.rm` (unica eccezione: l'annulla di un file vuoto appena creato).
-- Le librerie in `vendor/` si caricano solo quando servono, con `lib(src, globale)`.
-- Mantieni le scorciatoie di MC quando esistono; le nuove vanno sotto `Ctrl-X <lettera>`. Nell'interfaccia scrivi i tasti per esteso (`Ctrl-X`, `Alt-I`, `Shift-F4`), non con la notazione `C-x` di MC.
-- Ogni funzione nuova va anche nel manuale (`MAN`) e, se ha un tasto, nella sezione "Tutte le scorciatoie".
+Directory hotlist (Ctrl-\\), quick search by typing (Ctrl-S), directory history, "Find file" with results in a panel, chmod and symlinks, pipes in the demo console, side-by-side diff of two files, selection with Shift+arrows, an English version of the manual.
 
-## Idee aperte
-
-Hotlist delle cartelle (Ctrl-\\), ricerca rapida digitando (Ctrl-S), cronologia delle cartelle, "Find file" con risultati nel pannello, chmod/symlink, pipe nella console demo, diff affiancato fra due file, selezione con Shift+frecce.
-
-## Licenza
+## License
 
 Copyright (C) 2026 Francesco Fullone.
 
-Nightglass è software libero: puoi ridistribuirlo e modificarlo secondo i termini della GNU General Public License, versione 2 o (a tua scelta) qualunque versione successiva. Il testo completo è in `LICENSE`. Identificativo SPDX: `GPL-2.0-or-later`.
+Nightglass is free software: you can redistribute it and/or modify it under the terms of the GNU General Public License, version 2 or (at your option) any later version. The full text is in [`LICENSE`](LICENSE). SPDX identifier: `GPL-2.0-or-later`.
 
-Le librerie in `vendor/` mantengono le loro licenze, elencate in `THIRD_PARTY.md`. pdf.js è sotto Apache-2.0, compatibile con la GPL dalla versione 3: per questo la licenza è "versione 2 o successive" e non "solo versione 2".
+The libraries in `vendor/` keep their own licenses, listed in [`THIRD_PARTY.md`](THIRD_PARTY.md). pdf.js is under Apache-2.0, which is compatible with the GPL from version 3: that is why the license is "version 2 or later" rather than "version 2 only".
