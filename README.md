@@ -181,7 +181,7 @@ The smoke test builds the fake folder with a small Git repository, then checks t
 
 ## Open ideas
 
-Directory hotlist (Ctrl-\\), quick search by typing (Ctrl-S), directory history, "Find file" with results in a panel, chmod and symlinks, pipes in the demo console, side-by-side diff of two files, selection with Shift+arrows, an English version of the manual, SQLite in write mode (with a confirmation before each change), S3 presigned links and bucket creation.
+Directory hotlist (Ctrl-\\), quick search by typing (Ctrl-S), directory history, "Find file" with results in a panel, chmod and symlinks, pipes in the demo console, side-by-side diff of two files, selection with Shift+arrows, an English version of the manual, S3 presigned links and bucket creation.
 
 ## License
 
