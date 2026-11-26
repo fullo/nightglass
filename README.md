@@ -87,7 +87,7 @@ Open `index.html` from the downloaded folder in any web browser. It runs on the 
 | ![Result of an SQL query](docs/screenshots/20-sqlite-query.png) | |
 | **SQL queries**: inside a database the command line talks to SQLite (`sqlite shop.sqlite>`). The result opens as a grid and is kept in `queries/`. Uses the system `sqlite3` when present, otherwise sql.js (WebAssembly). | |
 | ![A message of an mbox opened as a folder, two attachments marked](docs/screenshots/17-mail-folder.png) | ![Preview of an .eml with headers and the HTML message](docs/screenshots/18-mail-preview.png) |
-| **Mail files**: Enter opens an `.eml`, an `.mbox` (one folder per message) or an Outlook `.msg` as a read-only folder of the text, the HTML and the attachments; F5 copies attachments out, Ctrl-X u extracts everything. | **Mail preview** (F3): headers and the formatted message. Remote images and scripts are never loaded, so opening a message does not tell the sender you read it. |
+| **Mail files**: Enter opens an `.eml`, an `.mbox` (one folder per message), a Thunderbird folder, an Outlook `.msg` or an Outlook `.pst` (its folders, then one folder per message) as a read-only folder of the text, the HTML and the attachments; F5 copies attachments out, Ctrl-X u extracts everything. | **Mail preview** (F3): headers and the formatted message. Remote images and scripts are never loaded, so opening a message does not tell the sender you read it. |
 
 **Skins**: 12 colour schemes, which also apply to code and the terminal (the animation at the top shows all of them). Dracula, Eclipse and Neon:
 
@@ -114,7 +114,9 @@ tests/harness.py    fake Claude desktop API to test LIVE DISK mode in a browser
 tests/fakebin/ssh   fake ssh that runs "remote" commands in a local folder
 tests/fakebin/aws   fake aws CLI: the S3 commands the app uses, on a local folder
 tests/smoke.py      Playwright smoke test
-tests/mailfixtures.py sample .eml, .mbox and Outlook .msg files for the tests
+tests/mailfixtures.py sample .eml, .mbox, Outlook .msg and .pst files and a Thunderbird profile for the tests
+tests/pstwriter.py  small .pst writer used by mailfixtures.py (Unicode/ANSI, all three encodings)
+tests/pstcheck.py   compares the .pst reader with libpff (pypff) on any .pst file
 docs/screenshots.py regenerates the screenshots in docs/screenshots/
 ```
 
@@ -134,7 +136,7 @@ The script is one `{ … }` block split into sections marked with `/* ----------
 | syntax highlighting | highlight.js, coloured from the current skin |
 | quick view | preview in the other panel |
 | archives | tar reader and writer, gzip through `CompressionStream`, zip through JSZip, virtual filesystem `arcFS` |
-| mail | MIME parser on bytes (RFC 2047/2231 names, base64, quoted-printable, any charset `TextDecoder` knows), mbox splitter (mboxrd), OLE compound file and MAPI reader for `.msg` with compressed RTF; each message laid out as files for `arcFS`, mbox messages parsed only when opened |
+| mail | MIME parser on bytes (RFC 2047/2231 names, base64, quoted-printable, any charset `TextDecoder` knows), mbox splitter (mboxrd), Thunderbird folders (mbox files without extension, recognised from the `.msf` index or `.sbd` folder next to them), OLE compound file and MAPI reader for `.msg` with compressed RTF, `.pst` reader after [MS-PST] (node and block BTrees, data and subnode trees, permute and cyclic encoding, heap, BTH, property and table contexts, folders, messages, recipients, attachments); each message laid out as files for `arcFS`, mbox and pst messages parsed only when opened |
 | sqlite | engines `sqlCli` (system `sqlite3 -readonly`) and `sqlJs` (sql.js, in memory, `PRAGMA query_only`); `openSqlite` lays a database out as files for `arcFS`; `runSql` for the command line; `csvTable` previews CSV |
 | ssh | `sshFS`: a remote server through the system `ssh` client; virtual paths `/@ssh/<target>/…` |
 | s3 | `s3FS`: buckets through the system `aws` CLI; virtual paths `/@s3/<connection>/<bucket>/<key>`, connections (profile, endpoint) in `prefs.s3c`; paged listing with a "more" row |
@@ -173,11 +175,15 @@ LIVE DISK mode without the Claude desktop app: `tests/harness.py` injects a fake
 ```
 pip install playwright && playwright install chromium
 pip install compressed_rtf extract_msg   # compressed_rtf builds the sample .msg; extract_msg (optional) double-checks it
+pip install libpff-python                # optional: libpff double-checks the sample .pst files
 python3 tests/smoke.py
+python3 tests/pstcheck.py some.pst       # optional: compare the .pst reader with libpff on a real file
 python3 docs/screenshots.py
 ```
 
-The smoke test builds the fake folder with a small Git repository, then checks the demo drive, console, `tar`, PDF preview, manual, LIVE DISK mode, app icon, Git status, browsing a branch, an SSH connection and an upload, and the mail reader: attachments copied out of an .eml and a .msg byte for byte, an .mbox with a latin-1 base64 message, nested messages, the HTML preview with remote images blocked, and extracting a whole mailbox; S3 (download, upload, folder upload, mkdir, rename, delete, a 2500-object prefix paged by 1000, bucket list, profile and endpoint, missing credentials); SQLite (folder layout, grid preview, a 20000-row export identical to `sqlite3` output, queries, read-only refusal, a `.db` that is not SQLite, sql.js on the demo drive). If `extract_msg` is installed, the sample .msg is also read back with it as an independent check. Screenshots go to `tests/out/`.
+The smoke test builds the fake folder with a small Git repository, then checks the demo drive, console, `tar`, PDF preview, manual, LIVE DISK mode, app icon, Git status, browsing a branch, an SSH connection and an upload, and the mail reader: attachments copied out of an .eml, a .msg and a .pst byte for byte, an .mbox with a latin-1 base64 message, nested messages, the HTML preview with remote images blocked, extracting a whole mailbox, three .pst files (Unicode with "compressible" encoding; Unicode with "high" encoding and every BTree, heap, table and data tree split into many small pieces; ANSI), and Thunderbird folders (with and without `.msf`, a subfolder in `.sbd`, deleted messages hidden, other files without extension still opening normally); S3 (download, upload, folder upload, mkdir, rename, delete, a 2500-object prefix paged by 1000, bucket list, profile and endpoint, missing credentials); SQLite (folder layout, grid preview, a 20000-row export identical to `sqlite3` output, queries, read-only refusal, a `.db` that is not SQLite, sql.js on the demo drive). If `extract_msg` and `pypff` are installed, the sample .msg and .pst files are also read back with them as independent checks.
+
+The .pst reader has also been compared with libpff, with `tests/pstcheck.py`, on the sample files of other open-source PST readers (go-pst, java-libpst, pst-extractor: Unicode and ANSI, up to 29 MB and 2178 messages, every attachment byte for byte), and on copies of them re-encoded with "high" encoding. Those files are not in this repository because of what they contain (Enron and other leaked mailboxes). Screenshots go to `tests/out/`.
 
 ## Open ideas
 

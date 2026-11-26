@@ -1,13 +1,20 @@
 # SPDX-License-Identifier: GPL-2.0-or-later
 # Copyright (C) 2026 Francesco Fullone
-"""Sample mail files for the tests: an .eml, an .mbox and an Outlook .msg.
+"""Sample mail files for the tests: an .eml, an .mbox, an Outlook .msg, Outlook
+.pst files and a Thunderbird profile.
 
-  python3 tests/mailfixtures.py DIR     writes sample.eml, inbox.mbox, sample.msg
+  python3 tests/mailfixtures.py DIR     writes sample.eml, inbox.mbox, sample.msg,
+                                        sample.pst (Unicode, "compressible" encoding),
+                                        high-small.pst (Unicode, "high" encoding, every
+                                        structure split into small pieces), ansi.pst
+                                        (ANSI, no encoding), tb/ (Thunderbird folders),
                                         and expected.json (attachment bytes, as SHA-256)
 
-The .msg is written by a small OLE compound file writer below, so the tests
-need no Outlook. If `extract_msg` is installed (pip install extract_msg),
-the .msg is read back with it as an independent check.
+The .msg is written by a small OLE compound file writer below and the .pst
+files by tests/pstwriter.py, so the tests need no Outlook. If `extract_msg`
+is installed (pip install extract_msg), the .msg is read back with it, and if
+`pypff` is installed (pip install libpff-python), the .pst files are read back
+with libpff, as independent checks.
 """
 import email.policy, hashlib, json, os, struct, sys
 from email.message import EmailMessage
@@ -168,11 +175,71 @@ def make_msg():
     top['__attach_version1.0_#00000002'] = a3
     return cfb(top)
 
+def pst_messages(ansi=False):
+    import compressed_rtf
+    rtf = compressed_rtf.compress(b'{\\rtf1\\ansi Ciao dal formato RTF.}', compressed=True)
+    html = '<html><head><meta charset="utf-8"></head><body><p>Il <b>report</b> è pronto.</p><img src="cid:img1@x"></body></html>'.encode('utf-8')
+    d = lambda day, h: ft(2026, 11, day, h, 0) // 10**4 - 11644473600000
+    inner = {'subject': 'Café alle 11', 'body': 'Testo del messaggio inoltrato.', 'date': d(18, 9), 'sender': ('Anna Bianchi', 'anna@example.org'),
+             'atts': [{'name': 'nota.txt', 'data': b'nota interna\n', 'mime': 'text/plain'}]}
+    report = {'subject': 'Report trimestrale Q3 — versione finale' if not ansi else 'Report trimestrale Q3 - versione finale', 'prefix': True,
+              'sender': ('Giulia Verdi', 'giulia@example.com'), 'to': [('Francesco Fullone', 'f@example.it')], 'cc': [('Paolo Neri', 'paolo@example.com')],
+              'date': d(19, 14), 'body': 'Ciao,\nil report è pronto.\n\nSaluti', 'html': html, 'rtf': rtf, 'pad': 0 if ansi else 30,
+              'headers': 'Received: from mx.example.com\r\nX-Mailer: Outlook\r\n',
+              'atts': [{'name': 'Fattura PST €42.pdf', 'data': PDF, 'mime': 'application/pdf'}, {'name': 'logo.png', 'data': PNG, 'mime': 'image/png', 'cid': 'img1@x'},
+                       {'name': 'Café alle 11', 'msg': inner}]}
+    other = [{'subject': 'Pranzo %d' % i, 'sender': ('Luca', 'luca@example.com'), 'to': [('Francesco Fullone', 'f@example.it')], 'date': d(10 + i, 12), 'body': 'Ci vediamo alle 13? (%d)' % i} for i in range(1, 4)]
+    return [{'name': 'Posta in arrivo', 'msgs': [report] + other, 'kids': [{'name': 'Lavoro 2026', 'msgs': [dict(other[0], subject='Budget')]}]},
+            {'name': 'Posta inviata', 'msgs': [dict(other[1], subject='Re: Pranzo 2')]}, {'name': 'Posta eliminata', 'msgs': []}]
+
+def make_tb(d):
+    """a Thunderbird profile: Mail/Local Folders with Inbox (+ .msf, one expunged message), Inbox.sbd/Lavoro, Trash (no .msf);
+    outside the profile, Posta (an mbox without extension) and README (a plain file without extension)"""
+    lf = os.path.join(d, 'tb', 'Mail', 'Local Folders'); os.makedirs(os.path.join(lf, 'Inbox.sbd'))
+    def mb(*msgs):
+        out = b''
+        for i, (subj, extra) in enumerate(msgs):
+            out += b'From - Sat Nov 21 10:0%d:00 2026\nX-Mozilla-Status: %s\nFrom: Mario Rossi <mario@example.com>\nTo: f@example.it\nSubject: %s\nDate: Sat, 2%d Nov 2026 10:00:00 +0100\n\n%s\n\n' % (
+                i, extra, subj.encode(), i, b'Testo di ' + subj.encode())
+        return out
+    open(os.path.join(lf, 'Inbox'), 'wb').write(mb(('Benvenuto', b'0001'), ('Cancellato', b'0009'), ('Seconda', b'0000')))
+    open(os.path.join(lf, 'Inbox.msf'), 'wb').write(b'// <!-- <mdb:mork:z v="1.4"/> -->\n')
+    open(os.path.join(lf, 'Inbox.sbd', 'Lavoro'), 'wb').write(mb(('Progetto', b'0001')))
+    open(os.path.join(lf, 'Inbox.sbd', 'Lavoro.msf'), 'wb').write(b'// <!-- <mdb:mork:z v="1.4"/> -->\n')
+    open(os.path.join(lf, 'Trash'), 'wb').write(mb(('Vecchio', b'0001')))
+    open(os.path.join(d, 'Posta'), 'wb').write(mb(('Copiata', b'0001'), ('Anche questa', b'0001')))
+    open(os.path.join(d, 'README'), 'w').write('From the start: this is not a mailbox.\n')
+
+def make_pst(d):
+    import pstwriter
+    out = {}
+    for name, kw in [('sample.pst', {}), ('high-small.pst', {'crypt': 2, 'small': True}), ('ansi.pst', {'ansi': True, 'crypt': 0})]:
+        pstwriter.build(os.path.join(d, name), pst_messages(kw.get('ansi')), **kw)
+    try:
+        import pypff
+    except ImportError:
+        return
+    for name in ('sample.pst', 'high-small.pst', 'ansi.pst'):
+        f = pypff.file(); f.open(os.path.join(d, name))
+        top = [f.get_root_folder().get_sub_folder(i) for i in range(f.get_root_folder().number_of_sub_folders)]
+        top = [x for x in top if x.name == 'Top of Personal Folders'][0]
+        inbox = [top.get_sub_folder(i) for i in range(top.number_of_sub_folders) if top.get_sub_folder(i).name == 'Posta in arrivo'][0]
+        subj = [inbox.get_sub_message(i).subject for i in range(inbox.number_of_sub_messages)]
+        m = [inbox.get_sub_message(i) for i in range(inbox.number_of_sub_messages) if inbox.get_sub_message(i).subject.startswith('Report')][0]
+        a = [m.get_attachment(k) for k in range(m.number_of_attachments)]
+        assert sorted(subj) == sorted([x['subject'] for x in pst_messages(name == 'ansi.pst')[0]['msgs']]), subj
+        assert any(sha(x.read_buffer(x.size)) == sha(PDF) for x in a if x.size == len(PDF)), [x.size for x in a]
+        assert 'il report è pronto' in m.plain_text_body.decode('utf-8'), m.plain_text_body
+        f.close()
+    print('libpff reads the .pst files: ok')
+
 def main(d):
     os.makedirs(d, exist_ok=True)
     eml = make_eml(); open(os.path.join(d, 'sample.eml'), 'wb').write(eml)
     open(os.path.join(d, 'inbox.mbox'), 'wb').write(make_mbox(eml))
     msg = make_msg(); open(os.path.join(d, 'sample.msg'), 'wb').write(msg)
+    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+    make_pst(d); make_tb(d)
     exp = {'pdf': sha(PDF), 'png': sha(PNG), 'pdf_size': len(PDF)}
     json.dump(exp, open(os.path.join(d, 'expected.json'), 'w'))
     try:
