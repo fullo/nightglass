@@ -472,7 +472,7 @@ const ftime=t=>{if(!t)return '';const d=new Date(t),old=Math.abs(Date.now()-t)>1
 const ext=nm=>(String(nm).match(/\.([a-z0-9]+)$/i)||[,''])[1].toLowerCase();
 const IMG={png:'image/png',jpg:'image/jpeg',jpeg:'image/jpeg',gif:'image/gif',webp:'image/webp',bmp:'image/bmp',ico:'image/x-icon',svg:'image/svg+xml',avif:'image/avif'};
 const codeOf=e=>{const m=String(e&&e.message||e).match(/^([A-Z]{3,})/);return m?m[1]:'ERROR'};
-const nice=e=>({EACCES:'Permission denied',EPERM:'Operation not permitted',ENOENT:'No such file or directory',EEXIST:'File exists',ENOTDIR:'Not a directory',EISDIR:'Is a directory',ENOTEMPTY:'Directory not empty',EBUSY:'Resource busy, try again',EXDEV:'Cannot move across disks',EINVAL:'Invalid argument'})[codeOf(e)]||String(e&&e.message||e);
+const nice=e=>({EACCES:'Permission denied',EPERM:'Operation not permitted',ENOENT:'No such file or directory',EEXIST:'File exists',ENOTDIR:'Not a directory',EISDIR:'Is a directory',ENOTEMPTY:'Directory not empty',EBUSY:'Resource busy, try again',EXDEV:'Cannot move across disks',EINVAL:'Invalid argument'})[codeOf(e)]||String(e&&e.message||e).replace(/^E(S3|SSH): /,'');
 
 /* ---------- paths (always forward slashes) ---------- */
 function norm(p){p=String(p).replace(/\\/g,'/');let root='/',rest;const m=p.match(/^([A-Za-z]:)(\/|$)/);if(m){root=m[1].toUpperCase()+'/';rest=p.slice(m[0].length)}else rest=p.replace(/^\/+/,'');const o=[];for(const s of rest.split('/')){if(!s||s==='.')continue;if(s==='..')o.pop();else o.push(s)}return root+o.join('/')}
@@ -594,8 +594,8 @@ let prefs={};try{prefs=JSON.parse(localStorage.getItem(PK)||'{}')}catch(e){}
 const savePrefs=()=>{prefs.skin=document.body.dataset.skin;prefs.hidden=showHidden;prefs[B.id+'L']=P[0].path;prefs[B.id+'R']=P[1].path;try{localStorage.setItem(PK,JSON.stringify(prefs))}catch(e){}};
 const P=['L','R'].map((id,i)=>({i,el:$('#p'+id),path:'/',ents:[],list:[],cur:0,top:0,tag:new Set(),sortK:'name',sortD:1}));
 const AP=()=>P[act],OP=()=>P[1-act],CUR=()=>AP().list[AP().cur];
-const shortP=p=>typeof p==='string'&&p.startsWith('/@ssh/')?p.slice(6).split('/')[0]+':'+(p.slice(6+p.slice(6).split('/')[0].length)||'/'):live()&&under(p,B.home)?'~'+p.slice(B.home.length):p;
-function abs(a,from){a=String(a).trim().replace(/\\/g,'/');{const m=a.match(/^(?:sh|ssh|sftp):\/\/([^/\s]+)(\/.*)?$/)||a.match(/^([\w.-]+@[\w.-]+(?::\d+)?):(\/.*)$/);if(m)return norm('/@ssh/'+m[1]+'/'+(m[2]||'').replace(/^\/+/,''))}if(a==='~'||a.startsWith('~/'))return norm(B.home+'/'+a.slice(1));if(a.startsWith('/')||/^[A-Za-z]:/.test(a))return norm(a);return norm((from||AP().path)+'/'+a)}
+const shortP=p=>isS3(p)?(s3Conn(p)==='aws'?'':s3Conn(p)+':')+'s3://'+p.slice(s3Root(s3Conn(p)).length).replace(/^\/+/,''):typeof p==='string'&&p.startsWith('/@ssh/')?p.slice(6).split('/')[0]+':'+(p.slice(6+p.slice(6).split('/')[0].length)||'/'):live()&&under(p,B.home)?'~'+p.slice(B.home.length):p;
+function abs(a,from){a=String(a).trim().replace(/\\/g,'/');{const m=a.match(/^(?:([\w.@-]+):)?s3:\/\/(.*)$/i);if(m)return norm(S3P+(m[1]||(isS3(AP().path)?s3Conn(AP().path):prefs.s3last)||'aws')+'/'+m[2])}{const m=a.match(/^(?:sh|ssh|sftp):\/\/([^/\s]+)(\/.*)?$/)||a.match(/^([\w.-]+@[\w.-]+(?::\d+)?):(\/.*)$/);if(m)return norm('/@ssh/'+m[1]+'/'+(m[2]||'').replace(/^\/+/,''))}if(a==='~'||a.startsWith('~/'))return norm(B.home+'/'+a.slice(1));if(a.startsWith('/')||/^[A-Za-z]:/.test(a))return norm(a);return norm((from||AP().path)+'/'+a)}
 
 /* ---------- panels ---------- */
 function build(p,focus){
@@ -603,7 +603,8 @@ function build(p,focus){
  const l=p.ents.filter(x=>showHidden||!x.name.startsWith('.'));
  const v=x=>p.sortK==='size'?(x.size??-1):p.sortK==='mtime'?(x.mtime||0):x.name.toLowerCase();
  l.sort((a,b)=>(b.dir-a.dir)||((v(a)>v(b)?1:v(a)<v(b)?-1:a.name<b.name?-1:1)*p.sortD));
- {const sr=isSsh(p.path)&&p.path===sshRoot(sshTarget(p.path)),par=sr?(live()?B.home:'/'):parent(p.path);if(par)l.unshift({name:'..',path:par,dir:true,up:true})}
+ {const mi=l.findIndex(x=>x.more);if(mi>=0)l.push(...l.splice(mi,1))}
+ {const sr=isRem(p.path)&&p.path===remRoot(p.path),par=sr?(live()?B.home:'/'):parent(p.path);if(par)l.unshift({name:'..',path:par,dir:true,up:true})}
  p.list=l;const i=l.findIndex(x=>x.name===keep);p.cur=i>=0?i:Math.max(0,Math.min(p.cur,l.length-1));
  for(const t of [...p.tag])if(!l.some(x=>x.path===t))p.tag.delete(t);
 }
@@ -612,7 +613,7 @@ function render(p){
  const el=p.el,on=act===p.i,rowsEl=el.querySelector('.rows'),n=Math.max(1,Math.floor(rowsEl.clientHeight/(coarse?28:20)));
  if(p.cur<p.top)p.top=p.cur;if(p.cur>=p.top+n)p.top=p.cur-n+1;p.top=Math.max(0,Math.min(p.top,Math.max(0,p.list.length-n)));
  el.classList.toggle('act',on);
- el.querySelector('.ttl').innerHTML=p.arc?`<span> ${p.arc.mail?'✉':'⌸'} ${esc(base(p.arc.root))}:${esc('/'+relOf(p.arc.root,p.path))} (${p.arc.mail?'mail, read-only':'archive'}) </span>`:p.gref?`<span> ⎇ ${esc(p.gref.ref)}:${esc('/'+relOf(p.gref.root,p.path))} (read-only) </span>`:`<span> ${isSsh(p.path)?'⇄ ':''}${esc(shortP(p.path))}${p.git?' ⎇ '+esc(p.git.branch):''} </span>`;
+ el.querySelector('.ttl').innerHTML=p.arc?`<span> ${p.arc.mail?'✉':'⌸'} ${esc(base(p.arc.root))}:${esc('/'+relOf(p.arc.root,p.path))} (${p.arc.mail?'mail, read-only':'archive'}) </span>`:p.gref?`<span> ⎇ ${esc(p.gref.ref)}:${esc('/'+relOf(p.gref.root,p.path))} (read-only) </span>`:`<span> ${isSsh(p.path)?'⇄ ':isS3(p.path)?'☁ ':''}${esc(shortP(p.path))}${p.git?' ⎇ '+esc(p.git.branch):''} </span>`;
  const ar=k=>p.sortK===k?(p.sortD>0?'↓':'↑'):'';
  el.querySelector('.cols').innerHTML=`<button data-s="name">Name${ar('name')}</button><button data-s="size" class="c2h">Size${ar('size')}</button><button data-s="mtime" class="c3">Modify time${ar('mtime')}</button>`;
  rowsEl.innerHTML=p.list.slice(p.top,p.top+n).map((x,k)=>{const i=p.top+k,t=p.tag.has(x.path);const g=gitMark(p,x);return `<div class="row${x.dir?' d':''}${t?' t':''}${g?(g==='?'?' gu':' gm'):''}${on&&i===p.cur?' cur':''}" data-i="${i}"><span class="c1">${esc((t?'*':x.dir?(g==='*'||g==='?'?g:'/'):x.link?'@':g||' ')+x.name)}</span><span class="c2">${x.up?'UP--DIR':x.dir?'&lt;DIR&gt;':esc(fsize(x.size))}</span><span class="c3">${x.up?'':esc(ftime(x.mtime))}</span></div>`}).join('');
@@ -621,7 +622,7 @@ function render(p){
  if(p.tag.size){const s=p.list.filter(x=>p.tag.has(x.path)).reduce((a,x)=>a+(x.size||0),0);mini.innerHTML=`<span class="mk">${esc(fsz(s))} in ${p.tag.size} file${p.tag.size>1?'s':''}</span>`}
  else{const x=p.list[p.cur],g=x&&gitMark(p,x),GN={M:'modified',A:'added',D:'deleted',R:'renamed',C:'copied',U:'conflict','?':'untracked','*':'changes inside',T:'type changed'};mini.innerHTML=x?`<span>${esc((x.dir?'/':'')+x.name)}${g?' · git: '+(GN[g]||g):''}</span><span>${x.up?'UP--DIR':x.dir?'&lt;DIR&gt;':esc(fsize(x.size))}</span>`:'<span></span>'}
 }
-function setPrompt(){const p=AP().path;$('#prompt').textContent=isSsh(p)?`${shortP(p)}$ `:`${B.user||'user'}@${B.host||'local'}:${shortP(p)}$ `}
+function setPrompt(){const p=AP().path;$('#prompt').textContent=isRem(p)?`${shortP(p)}$ `:`${B.user||'user'}@${B.host||'local'}:${shortP(p)}$ `}
 function renderAll(){render(P[0]);render(P[1]);setPrompt();$('#mode').textContent=live()?'LIVE DISK':'DEMO DRIVE'}
 async function reload(p,focus){
  let path=p.path,ents=[];
@@ -630,7 +631,7 @@ async function reload(p,focus){
  if(p.gref&&!under(path,p.gref.root))p.gref=null;
  for(;;){try{ents=await FS(p,path).list(path);break}catch(e){const up=parent(path);if(!up||(p.gref&&path===p.gref.root)){if(p.gref){p.gref=null;continue}ents=[];break}path=up}}
  if(path!==p.path){p.path=path;p.tag.clear()}
- p.git=p.gref||p.arc||isSsh(path)?null:await gitInfo(path);
+ p.git=p.gref||p.arc||isRem(path)?null:await gitInfo(path);
  p.ents=ents;build(p,focus);render(p);setPrompt();
 }
 async function reloadBoth(focus){await reload(AP(),focus);await reload(OP())}
@@ -638,21 +639,22 @@ async function cd(p,path){
  while(p.arc&&!under(path,p.arc.root))p.arc=p.arc.prev||null;
  if(p.gref&&!under(path,p.gref.root))p.gref=null;
  let ents;try{ents=await FS(p,path).list(path)}catch(e){return err('Cannot change directory',`${shortP(path)}\n${nice(e)}`)}
- const prev=p.path;p.path=path;p.git=p.gref||p.arc||isSsh(path)?null:await gitInfo(path);p.ents=ents;p.tag.clear();p.cur=0;p.top=0;
+ const prev=p.path;p.path=path;p.git=p.gref||p.arc||isRem(path)?null:await gitInfo(path);p.ents=ents;p.tag.clear();p.cur=0;p.top=0;
  const child=prev!==path&&under(prev,path)?prev.slice(path.length).replace(/^\//,'').split('/')[0]:'';
  build(p,child);render(p);setPrompt();savePrefs();
 }
 function move(d){const p=AP();p.cur=Math.max(0,Math.min(p.list.length-1,p.cur+d));render(p)}
 function pageN(){return Math.max(1,Math.floor(AP().el.querySelector('.rows').clientHeight/(coarse?28:20))-1)}
 function setAct(i){if(act===i)return;act=i;renderAll()}
-function tagCur(){const p=AP(),x=CUR();if(x&&!x.up)p.tag.has(x.path)?p.tag.delete(x.path):p.tag.add(x.path);move(1);render(p)}
-const sources=p=>p.tag.size?p.list.filter(x=>p.tag.has(x.path)):[p.list[p.cur]].filter(x=>x&&!x.up);
+function tagCur(){const p=AP(),x=CUR();if(x&&!x.up&&!x.more)p.tag.has(x.path)?p.tag.delete(x.path):p.tag.add(x.path);move(1);render(p)}
+const sources=p=>p.tag.size?p.list.filter(x=>p.tag.has(x.path)):[p.list[p.cur]].filter(x=>x&&!x.up&&!x.more);
 const whatOf=s=>s.length===1?`${s[0].dir?'directory':'file'} "${s[0].name}"`:`${s.length} files/directories`;
 async function enter(){
  const x=CUR();if(!x)return;
+ if(x.more)return s3More(AP(),x);
  if(x.dir)return cd(AP(),x.path);
  if((arcType(x.name)||mailType(x.name))&&!x.link)return enterArchive(AP(),x);
- if(live()&&!AP().gref&&!AP().arc&&!isSsh(x.path)){try{await Live.open(x.path);hint('Opened '+x.name+' in its app')}catch(e){err('Open',nice(e))}}
+ if(live()&&!AP().gref&&!AP().arc&&!isRem(x.path)){try{await Live.open(x.path);hint('Opened '+x.name+' in its app')}catch(e){err('Open',nice(e))}}
  else view(x);
 }
 function globRe(g){const m=g.match(/^\/(.+)\/([a-z]*)$/);if(m)return new RegExp(m[1],m[2].replace(/[gy]/g,''));return new RegExp('^'+g.split('').map(c=>c==='*'?'.*':c==='?'?'.':c.replace(/[.+^${}()|[\]\\]/g,'\\$&')).join('')+'$','i')}
@@ -667,7 +669,8 @@ async function group(how){
 /* ---------- file operations ---------- */
 async function copyTree(s,t,ask,SF=B,DF=fsAt(t)){
  const st=await SF.stat(s);if(!st)throw new Error('ENOENT: '+s);
- if(st.dir){const ts=await DF.stat(t);if(ts&&!ts.dir)throw new Error('EEXIST: '+t);if(!ts)await DF.mkdir(t);let n=0;for(const e of await SF.list(s)){const r=await copyTree(e.path,join(t,e.name),ask,SF,DF);if(r==='abort')return 'abort';n+=r}return n}
+ if(st.dir){const ts=await DF.stat(t);if(ts&&!ts.dir)throw new Error('EEXIST: '+t);
+  if(!ts&&live()){let k=null;hint('Copying '+shortP(s));if(SF===B&&DF.uploadDir)k=await DF.uploadDir(s,t);else if(DF===B&&SF.downloadDir){k=await SF.downloadDir(s,t);if(!(await B.stat(t)))await B.mkdir(t)}else if(SF===DF&&DF.copyDir)k=await DF.copyDir(s,t);if(k!=null)return k}if(!ts)await DF.mkdir(t);let n=0;for(const e of await SF.list(s)){const r=await copyTree(e.path,join(t,e.name),ask,SF,DF);if(r==='abort')return 'abort';n+=r}return n}
  const ts=await DF.stat(t);if(ts){if(ts.dir)throw new Error('EISDIR: '+t);const a=await ask(t);if(a==='abort')return 'abort';if(a==='skip')return 0}
  hint('Copying '+shortP(s));if(SF===DF&&DF.copyFile)await DF.copyFile(s,t);else if(SF===B&&live()&&DF.uploadFrom)await DF.uploadFrom(s,t);else if(DF===B&&live()&&SF.downloadTo)await SF.downloadTo(s,t);else await DF.writeBytes(t,await SF.readBytes(s));return 1;
 }
@@ -707,11 +710,11 @@ async function mkdirDlg(){
 async function del(list){
  if(roGuard('Delete'))return;
  const p=AP(),src=list||sources(p);if(!src.length)return;
- const rem=isSsh(src[0].path);
- const r=await dlg({title:'Delete',err:true,lines:[rem?`Delete ${whatOf(src)} on ${sshTarget(src[0].path)}?`:live()?`Move ${whatOf(src)} to the Trash?`:`Delete ${whatOf(src)}?`,...(rem?['There is no Trash on the server: this cannot be undone.']:[])],buttons:['Yes','No'],defBtn:rem?1:0});
+ const rem=isRem(src[0].path);
+ const r=await dlg({title:'Delete',err:true,lines:[rem?`Delete ${whatOf(src)} on ${remName(src[0].path)}?`:live()?`Move ${whatOf(src)} to the Trash?`:`Delete ${whatOf(src)}?`,...(rem?[isS3(src[0].path)?'S3 has no Trash: this cannot be undone.':'There is no Trash on the server: this cannot be undone.']:[])],buttons:['Yes','No'],defBtn:rem?1:0});
  if(!r||r.b!==0)return;
  let n=0;for(const s of src){try{await fsAt(s.path).remove(s.path);n++}catch(e){await err('Delete',`Cannot delete "${shortP(s.path)}"\n${nice(e)}`);break}}
- p.tag.clear();await reloadBoth();hint(rem?`${n} deleted on ${sshTarget(src[0].path)}`:live()?`${n} moved to the Trash. Recover them from there.`:`${n} deleted`);
+ p.tag.clear();await reloadBoth();hint(rem?`${n} deleted on ${remName(src[0].path)}`:live()?`${n} moved to the Trash. Recover them from there.`:`${n} deleted`);
 }
 async function newFileDlg(){
  if(roGuard('New file'))return;
@@ -1210,7 +1213,7 @@ function sshFS(t){
  };
  SSHC.set(t,c);return c;
 }
-const fsAt=path=>isSsh(path)&&live()?sshFS(sshTarget(path)):B;
+const fsAt=path=>isSsh(path)&&live()?sshFS(sshTarget(path)):isS3(path)&&live()?s3FS(s3Conn(path)):B;
 const sameFS=(a,b)=>a===b;
 async function sshDlg(i){
  if(!live())return err('Shell link','SSH works in the desktop app, on your real disk.\nInstall this artifact as an app from the Claude desktop app.');
@@ -1223,6 +1226,99 @@ async function sshDlg(i){
  hint('Connecting to '+t+'…');
  try{const F=sshFS(t),home=m[2]||await F.home();act=i;await cd(P[i],sshVirt(t,home));hint(`Connected to ${t}. F5/F6 copy and move to and from the other panel. F8 deletes on the server for good. ".." at / disconnects.`)}
  catch(e){err('Shell link',`Cannot connect to ${t}\n${String(e.message||e).replace(/^ESSH: /,'')}\nIf it asks for a password or a new host key, use Login in terminal.`)}
+}
+
+/* ---------- s3: buckets on AWS or any S3-compatible server ---------- */
+// Paths live under /@s3/<connection>/<bucket>/<key…>. A connection is an AWS
+// CLI profile, optionally with an endpoint URL (MinIO, Ceph, Garage, R2,
+// Wasabi); its settings are kept in prefs.s3c. Every operation runs the
+// system `aws` command. Listing asks only for one level (delimiter "/"),
+// a page of S3PAGE entries at a time, so the size of the bucket does not matter.
+const S3P='/@s3/',S3PAGE=1000;
+const isS3=p=>typeof p==='string'&&p.startsWith(S3P);
+const isRem=p=>isSsh(p)||isS3(p);
+const s3Conn=p=>p.slice(S3P.length).split('/')[0];
+const s3Root=c=>S3P+c;
+const remRoot=p=>isSsh(p)?sshRoot(sshTarget(p)):s3Root(s3Conn(p));
+const remName=p=>isSsh(p)?sshTarget(p):s3Conn(p);
+const s3Split=p=>{const rest=p.slice(s3Root(s3Conn(p)).length).replace(/^\/+/,''),i=rest.indexOf('/');return i<0?{b:rest,k:''}:{b:rest.slice(0,i),k:rest.slice(i+1)}};
+const s3Url=p=>{const {b,k}=s3Split(p);return 's3://'+b+'/'+k};
+function s3Args(c,a){const cf=(prefs.s3c||{})[c]||{},o=[...a];if(cf.profile)o.push('--profile',cf.profile);if(cf.endpoint)o.push('--endpoint-url',cf.endpoint);return 'aws '+o.map(qa).join(' ')}
+function s3Fail(r,what){
+ const m=((r.stderr||'')+'\n'+(r.stdout||'')).trim(),last=m.split('\n').filter(Boolean).pop()||what||'aws failed';
+ if(r.code===127||/not found|not recognized as/i.test(m)&&!/\(/.test(m))throw new Error('ES3: the aws command is not installed on this computer');
+ if(/\((404|NoSuchKey|NoSuchBucket|NotFound)\)/.test(m)||/does not exist/i.test(m))throw new Error('ENOENT: '+last);
+ if(/\((403|AccessDenied|AllAccessDisabled)\)/.test(m))throw new Error('EACCES: '+last);
+ throw new Error('ES3: '+last);
+}
+async function s3Run(c,a,o={}){const r=await Live.D.childProcess.exec(s3Args(c,a),{timeout:o.timeout||60000});if(r.code!==0&&!o.ok)s3Fail(r,o.what);return r}
+const S3C=new Map();
+function s3FS(c){
+ let F=S3C.get(c);if(F)return F;
+ const json=r=>{try{return JSON.parse(r.stdout||'{}')}catch(e){throw new Error('ES3: unexpected answer from aws')}};
+ const tm=s=>{const t=Date.parse(s||'');return isNaN(t)?0:t};
+ const page=async(path,token)=>{
+  const {b,k}=s3Split(path),pfx=k?k+'/':'',a=['s3api','list-objects-v2','--bucket',b,'--delimiter','/','--max-items',String(S3PAGE),'--output','json'];
+  if(pfx)a.push('--prefix',pfx);if(token)a.push('--starting-token',token);
+  const j=json(await s3Run(c,a,{what:'cannot list '+s3Url(path)})),out=[];
+  for(const x of j.CommonPrefixes||[]){const n=x.Prefix.slice(pfx.length).replace(/\/$/,'');if(n&&n!=='.'&&n!=='..'&&!n.includes('/'))out.push({name:n,path:join(path,n),dir:true,size:null,mtime:0})}
+  for(const x of j.Contents||[]){const n=x.Key.slice(pfx.length);if(n&&n!=='.'&&n!=='..'&&!n.includes('/'))out.push({name:n,path:join(path,n),dir:false,size:+x.Size||0,mtime:tm(x.LastModified)})}
+  return {out,token:j.NextToken||null};
+ };
+ const moreEnt=(path,token)=>({name:`… more: Enter loads the next ${S3PAGE}`,path:join(path,'…more'),more:true,token,dir:false,size:null,mtime:0});
+ F={c,s3:true,
+  async list(path){
+   if(path===s3Root(c)){const j=json(await s3Run(c,['s3api','list-buckets','--output','json'],{what:'cannot list the buckets'}));return (j.Buckets||[]).map(x=>({name:x.Name,path:join(path,x.Name),dir:true,size:null,mtime:tm(x.CreationDate)}))}
+   const r=await page(path);if(r.token)r.out.push(moreEnt(path,r.token));return r.out;
+  },
+  async more(path,token){const r=await page(path,token);if(r.token)r.out.push(moreEnt(path,r.token));return r.out},
+  async stat(path){
+   const {b,k}=s3Split(path);if(!b||!k)return {name:base(path),path,dir:true,size:null,mtime:0};
+   const h=await s3Run(c,['s3api','head-object','--bucket',b,'--key',k,'--output','json'],{ok:true});
+   if(h.code===0){const j=json(h);return {name:base(path),path,dir:false,size:+j.ContentLength||0,mtime:tm(j.LastModified)}}
+   if(!/\((404|NoSuchKey|NotFound)\)|Not Found/i.test(h.stderr||''))s3Fail(h);
+   const l=json(await s3Run(c,['s3api','list-objects-v2','--bucket',b,'--prefix',k+'/','--delimiter','/','--max-items','1','--output','json']));
+   return (l.Contents||[]).length||(l.CommonPrefixes||[]).length?{name:base(path),path,dir:true,size:null,mtime:0}:null;
+  },
+  async exists(path){return !!(await this.stat(path))},
+  async downloadTo(path,local){await s3Run(c,['s3','cp',s3Url(path),local,'--only-show-errors'],{timeout:3600000,what:'download failed'})},
+  async uploadFrom(local,path){await s3Run(c,['s3','cp',local,s3Url(path),'--only-show-errors'],{timeout:3600000,what:'upload failed'})},
+  async uploadDir(local,path){const r=await s3Run(c,['s3','cp',local,s3Url(path)+'/','--recursive','--no-progress'],{timeout:86400000,what:'upload failed'});return (r.stdout.match(/^upload: /gm)||[]).length},
+  async downloadDir(path,local){const r=await s3Run(c,['s3','cp',s3Url(path)+'/',local,'--recursive','--no-progress'],{timeout:86400000,what:'download failed'});return (r.stdout.match(/^download: /gm)||[]).length},
+  async copyDir(a,b2){const r=await s3Run(c,['s3','cp',s3Url(a)+'/',s3Url(b2)+'/','--recursive','--no-progress'],{timeout:86400000,what:'copy failed'});return (r.stdout.match(/^copy: /gm)||[]).length},
+  async readBytes(path){const tmp=ltmp();try{await this.downloadTo(path,tmp);return await Live.fs.readFile(tmp)}finally{Live.fs.rm(tmp).catch(()=>{})}},
+  async writeBytes(path,u){const tmp=ltmp();await Live.fs.writeFile(tmp,u);try{await this.uploadFrom(tmp,path)}finally{Live.fs.rm(tmp).catch(()=>{})}},
+  async write(path,txt){return this.writeBytes(path,enc.encode(txt))},
+  async mkdir(path){const {b,k}=s3Split(path);if(!k)throw new Error('EPERM: Nightglass does not create buckets; create it with your provider, then open it here');if(await this.stat(path))throw new Error('EEXIST: '+s3Url(path));await s3Run(c,['s3api','put-object','--bucket',b,'--key',k+'/','--output','json'],{what:'mkdir failed'})},
+  async touch(path){const {b,k}=s3Split(path);if(!k)throw new Error('EPERM: '+s3Url(path));if(await this.stat(path))throw new Error('EEXIST: '+s3Url(path));await s3Run(c,['s3api','put-object','--bucket',b,'--key',k,'--output','json'],{what:'touch failed'})},
+  async rename(a,b2){if(!s3Split(a).k||!s3Split(b2).k)throw new Error('EPERM: buckets cannot be renamed');if(await this.stat(b2))throw new Error('EEXIST: '+s3Url(b2));const s=await this.stat(a);if(!s)throw new Error('ENOENT: '+s3Url(a));
+   if(s.dir){await s3Run(c,['s3','mv',s3Url(a)+'/',s3Url(b2)+'/','--recursive','--no-progress'],{timeout:86400000,what:'move failed'})}else await s3Run(c,['s3','mv',s3Url(a),s3Url(b2),'--only-show-errors'],{timeout:3600000,what:'move failed'})},
+  async copyFile(a,b2){await s3Run(c,['s3','cp',s3Url(a),s3Url(b2),'--only-show-errors'],{timeout:3600000,what:'copy failed'})},
+  async remove(path){const {k}=s3Split(path);if(!k)throw new Error('EPERM: Nightglass does not delete buckets');const s=await this.stat(path);if(!s)return;
+   if(s.dir)await s3Run(c,['s3','rm',s3Url(path)+'/','--recursive','--only-show-errors'],{timeout:86400000,what:'delete failed'});else await s3Run(c,['s3','rm',s3Url(path),'--only-show-errors'],{what:'delete failed'})}
+ };
+ S3C.set(c,F);return F;
+}
+async function s3More(p,x){
+ try{hint('Loading more…');const add=await s3FS(s3Conn(p.path)).more(p.path,x.token);p.ents=p.ents.filter(e=>!e.more).concat(add);build(p,(add[0]||{}).name);render(p);hint(`${p.ents.filter(e=>!e.more).length} entries loaded${add.some(e=>e.more)?'; more on the last row':''}`)}
+ catch(e){err('S3',nice(e))}
+}
+async function s3Dlg(i){
+ if(!live())return err('S3 link','S3 works in the desktop app, on your real disk.\nInstall this artifact as an app from the Claude desktop app.');
+ if(!Live.D||!Live.D.childProcess)return err('S3 link','S3 needs full access in the desktop app.');
+ const r=await dlg({title:'S3 link',lines:['Where: s3://bucket/prefix, or just s3:// for the list of buckets.','Before it, a profile from ~/.aws; after it, an endpoint URL for','MinIO, Ceph, Garage, R2 or Wasabi. Examples:','  s3://logs/2024/08/','  work s3://reports/','  minio s3://backups/ http://localhost:9000','It uses the aws command and your keys in ~/.aws.'],input:true,def:prefs.lastS3||'s3://',buttons:['Connect','Cancel']});
+ if(!r||r.b!==0||!r.v)return;
+ let loc=null,profile='',endpoint='';
+ for(const t of r.v.trim().split(/\s+/)){if(/^s3:\/\//i.test(t))loc=t.slice(5);else if(/^https?:\/\//i.test(t))endpoint=t.replace(/\/+$/,'');else if(/^[\w.-]+$/.test(t)&&!profile)profile=t;else return err('S3 link',`Not understood: "${t}"\nWrite it as [profile] s3://bucket/prefix [endpoint URL]`)}
+ if(loc==null)return err('S3 link','Write the location as s3://bucket/prefix, or s3:// for all buckets.');
+ const c=safeName((profile||'aws')+(endpoint?'@'+endpoint.replace(/^https?:\/\//i,'').replace(/[\/\\]/g,'_'):'')).replace(/[:]/g,'_')||'aws';
+ prefs.s3c=prefs.s3c||{};prefs.s3c[c]={profile,endpoint};prefs.lastS3=r.v.trim();prefs.s3last=c;savePrefs();S3C.delete(c);
+ const v=await Live.D.childProcess.exec('aws --version',{timeout:20000}).catch(e=>({code:127,stderr:String(e)}));
+ if(v.code!==0)return err('S3 link','The aws command was not found on this computer.\nInstall the AWS CLI: on macOS "brew install awscli",\non Windows "winget install Amazon.AWSCLI", on Linux your package manager.\nThen set your keys with "aws configure".');
+ hint('Connecting to '+(profile||'default profile')+'…');
+ const path=norm(s3Root(c)+'/'+loc.replace(/^\/+/,''));
+ try{act=i;await s3FS(c).list(path);await cd(P[i],path);hint(`Connected. F5/F6 copy and move to and from the other panel. F8 deletes for good: S3 has no Trash. ".." at the top disconnects.`)}
+ catch(e){err('S3 link',`Cannot open ${'s3://'+loc}\n${String(e.message||e).replace(/^E[A-Z0-9]+: /,'')}\n\nCheck the profile ("aws configure list${profile?' --profile '+profile:''}") and, for MinIO and other servers, the endpoint URL.`)}
 }
 
 /* ---------- git ---------- */
@@ -1254,7 +1350,7 @@ function gitFS(g){return g.api||(g.api={
  async exists(path){return !!(await this.stat(path))},
  async readBytes(path){const e=await this.stat(path);if(!e)throw new Error('ENOENT: '+path);if(e.dir)throw new Error('EISDIR: '+path);const tmp=join(Live.tmp,`ng-git-${Date.now().toString(36)}.blob`);const r=await git(g.root,['cat-file','blob',e.sha],tmp);if(r.code!==0)throw new Error('EIO: '+r.stderr);try{return await Live.fs.readFile(tmp)}finally{Live.fs.rm(tmp).catch(()=>{})}}
 })}
-const FS=(p,path=p.path)=>p.arc&&under(path,p.arc.root)?arcFS(p.arc):isSsh(path)?fsAt(path):p.gref?gitFS(p.gref):B;
+const FS=(p,path=p.path)=>p.arc&&under(path,p.arc.root)?arcFS(p.arc):isRem(path)?fsAt(path):p.gref?gitFS(p.gref):B;
 function roGuard(what){const p=AP();if(p.arc){err(what||'Read-only',`This panel is inside the ${p.arc.mail?'mail file':'archive'} "${base(p.arc.root)}", read-only.\nF5 copies files out of it. Go up with .. to leave it.`);return true}if(!p.gref)return false;err(what||'Read-only',`This panel shows branch "${p.gref.ref}" from Git, read-only.\nF5 copies files out of it. Leave the branch view (Ctrl-X g) to change files.`);return true}
 async function gitBranches(){
  if(!live())return err('Git','Git works in the desktop app, on your real disk.');
@@ -1375,7 +1471,7 @@ const L_=(id,t)=>`<button class="lk" data-h="${id}">${t}</button>`;
 const kb=(...k)=>k.map(x=>`<kbd>${x}</kbd>`).join(' ');
 const tbl=rows=>`<table>${rows.map(r=>`<tr><td>${r[0]}</td><td>${r[1]}</td></tr>`).join('')}</table>`;
 const MAN=[
-{id:'index',t:'Indice',b:`<p>Nightglass è un file manager a due pannelli costruito sul modello di Midnight Commander (MC). Questo manuale descrive tutto quello che fa. ${kb('F1')} lo apre da qualunque punto, ${kb('Esc')} o ${kb('F10')} lo chiude, ${kb('Backspace')} torna alla pagina precedente.</p><ul>${['intro','screen','move','select','fileops','viewer','hex','editor','quick','batch','compare','archives','mail','git','ssh','cmdline','term','menus','keys','limits'].map(i=>`<li>${L_(i,'')}</li>`).join('')}</ul>`},
+{id:'index',t:'Indice',b:`<p>Nightglass è un file manager a due pannelli costruito sul modello di Midnight Commander (MC). Questo manuale descrive tutto quello che fa. ${kb('F1')} lo apre da qualunque punto, ${kb('Esc')} o ${kb('F10')} lo chiude, ${kb('Backspace')} torna alla pagina precedente.</p><ul>${['intro','screen','move','select','fileops','viewer','hex','editor','quick','batch','compare','archives','mail','git','ssh','s3','cmdline','term','menus','keys','limits'].map(i=>`<li>${L_(i,'')}</li>`).join('')}</ul>`},
 {id:'intro',t:'Disco demo e disco vero',b:`<p>Nightglass lavora in due modi. In alto a destra vedi quale è attivo.</p>
 <h3>DEMO DRIVE</h3><p>Nel browser lavori su un disco finto con file di esempio inventati. Le modifiche restano salvate per te fra una visita e l'altra. Qui funzionano pannelli, visualizzatore, editor, archivi e la console con i comandi base. Non ci sono il terminale vero e Git.</p>
 <h3>LIVE DISK</h3><p>Per lavorare sui file veri del tuo computer:</p><ol><li>apri questo artifact nel Claude desktop app;</li><li>premi <b>Install as app</b> nella riga dei suggerimenti in basso, oppure dal menu Command;</li><li>apri Nightglass dal Dock (Mac) o dal menu Start (Windows);</li><li>premi <b>Grant full access</b> e conferma nella finestra di sistema.</li></ol><p>Il permesso di accesso completo si chiede di nuovo a ogni nuova versione dell'app. Sul disco vero l'app parte dalla tua home: il pannello sinistro mostra la home, quello destro la cartella Documenti.</p>
@@ -1395,11 +1491,12 @@ const MAN=[
 {id:'mail',t:'Posta: eml, mbox, msg',b:`<p>Un file di posta si apre come una cartella, in sola lettura, come un archivio. Vale per tre formati:</p>`+tbl([['<code>.eml</code>','un messaggio salvato da quasi tutti i client (Thunderbird, Apple Mail, Gmail con “Scarica messaggio”)'],['<code>.mbox</code>, <code>.mbx</code>','una casella intera: un file con tanti messaggi, come l\'esportazione di Google Takeout o le cartelle di Thunderbird'],['<code>.msg</code>','un messaggio salvato da Outlook']])+`<h3>Cosa c'è dentro</h3>`+tbl([['<code>message.txt</code>','mittente, destinatari, data, oggetto, elenco degli allegati e il testo del messaggio. Se il messaggio è solo in HTML, qui c\'è il testo estratto dall\'HTML.'],['<code>message.html</code>','la versione HTML, se c\'è'],['<code>message.rtf</code>','solo nei .msg: il testo in formato RTF di Outlook'],['<code>headers.txt</code>','tutte le intestazioni originali (in un .msg solo se Outlook le ha salvate)'],['gli allegati','con il loro nome. Un messaggio inoltrato come allegato è un altro <code>.eml</code>, in cui puoi entrare; in un .msg è una cartella “(message)”.']])+`<p>Un <code>.mbox</code> mostra una cartella per messaggio, con numero, data e oggetto: <code>0042 2026-11-20 Riunione di lunedì</code>. Dentro trovi gli stessi file di un .eml. I messaggi vengono letti solo quando entri nella loro cartella, così anche una casella di migliaia di messaggi si apre subito.</p>`+tbl([[kb('Invio'),'entra nel file di posta, o in un messaggio dentro un .mbox'],[kb('F3'),'sul file di posta: anteprima con intestazioni e messaggio impaginato; '+kb('F8')+' mostra il sorgente'],[kb('F5'),'copia gli allegati marcati (o messaggi interi di un .mbox) nell\'altro pannello'],[kb('Ctrl-X')+' '+kb('u'),'estrae tutto in una cartella: per un .mbox, una sottocartella per messaggio'],['..','in cima torna alla cartella vera']])+`<h3>Privacy</h3><p>L'anteprima HTML non carica nulla da internet: le immagini remote, che spesso servono a sapere se e quando hai aperto un messaggio, restano bloccate, e l'intestazione lo segnala. Le immagini allegate al messaggio si vedono. Gli script non vengono eseguiti.</p><p>Sul disco vero ${kb('Invio')} su un .eml lo apre in Nightglass, non nel programma di posta. Per aprirlo nel suo programma usa Command › Open in its app.</p>`},
 {id:'git',t:'Git',b:`<p>Solo sul disco vero, e serve <code>git</code> installato sul computer. Quando entri in una cartella che fa parte di un repository:</p><ul><li>il titolo del pannello mostra il branch attuale (⎇ main);</li><li>i file hanno davanti lo stato (vedi ${L_('screen','Lo schermo')}); i modificati sono colorati, i non tracciati in corsivo;</li><li>la riga di stato del pannello dice “git: modified”, “untracked” e così via.</li></ul>`+tbl([[kb('Ctrl-X')+' '+kb('g'),'elenco dei branch locali e remoti, dal più recente. ● è il branch attuale, ◆ quello che stai sfogliando'],['Browse','sfoglia il branch scelto in sola lettura senza cambiare nulla sul disco: F3 visualizza, F5 copia file fuori, la Quick view funziona'],['Checkout','cambia il branch della copia di lavoro, dopo una conferma. Git rifiuta se ci sono modifiche locali che andrebbero perse; il messaggio di Git compare in una finestra'],[kb('Ctrl-X')+' '+kb('l'),'log degli ultimi 200 commit del file o della cartella sotto il cursore (del branch sfogliato, se ne stai sfogliando uno)']])+`<p>Per uscire dalla vista di un branch: ${kb('Ctrl-X')} ${kb('g')} › <b>Back to the working tree</b>, oppure sali sopra la radice del repository.</p>`},
 {id:'ssh',t:'Server remoti (SSH)',b:`<p>Come la “Shell link” di MC: un pannello si collega a un server via SSH e lo usi come una cartella locale. Funziona solo nell'app desktop e usa il programma <code>ssh</code> del tuo computer, con le tue chiavi, l'ssh-agent e il file <code>~/.ssh/config</code>.</p>`+tbl([[kb('Ctrl-X')+' '+kb('s'),'apre la Shell link nel pannello attivo (oppure Left/Right › Shell link)'],['<code>user@host</code>','si collega e parte dalla home sul server'],['<code>user@host:2222/var/www</code>','porta diversa e cartella di partenza'],['un alias','qualunque nome definito in <code>~/.ssh/config</code>'],['<code>cd sh://user@host/percorso</code>','lo stesso dalla riga di comando']])+`<h3>Cosa puoi fare</h3><ul><li>${kb('F5')} copia fra locale e server nei due sensi, anche cartelle intere; ${kb('F6')} sposta (copia e poi cancella l'originale);</li><li>${kb('F3')} visualizza, ${kb('F4')} modifica e salva direttamente sul server, la ${L_('quick','Quick view')} funziona;</li><li>${kb('F7')} crea cartelle, la ${L_('batch','rinomina in blocco')} e gli ${L_('archives','archivi')} funzionano anche sul server;</li><li>${kb('F8')} cancella sul server <b>per sempre</b>: lì non c'è il Cestino, e la finestra di conferma lo ricorda (di partenza è su No);</li><li>i comandi scritti nella riga di comando partono sul server, nella cartella del pannello, e l'output compare nel ${L_('term','terminale')};</li><li><code>..</code> nella cartella <code>/</code> del server chiude il collegamento e torna alla home locale.</li></ul><h3>Password e nuovi server</h3><p>Le operazioni girano senza chiedere nulla. Se il server vuole una password, o se è la prima volta e SSH chiede di confermare la chiave del server, scegli <b>Login in terminal</b>: si apre il terminale, rispondi lì, poi ${kb('Ctrl-O')} e ricollegati. Su Mac e Linux il collegamento resta aperto in background per 10 minuti, quindi la password serve una volta sola. Su Windows servono le chiavi SSH.</p><p>Sul server servono una shell POSIX e i comandi di base (<code>find</code> o <code>stat</code>, <code>cat</code>, <code>mv</code>, <code>cp</code>, <code>rm</code>): va bene qualunque Linux, macOS o BSD.</p>`},
+{id:'s3',t:'Bucket S3 (AWS, MinIO, R2…)',b:`<p>Un pannello si apre su un bucket S3 e lo usi come una cartella, esattamente come un ${L_('ssh','server SSH')}. Funziona con AWS e con i servizi compatibili: MinIO, Ceph, Garage, Cloudflare R2, Wasabi. Solo nell'app desktop. Usa il comando <code>aws</code> (AWS CLI) del tuo computer, con le chiavi e i profili che hai in <code>~/.aws</code>.</p>`+tbl([[kb('Ctrl-X')+' '+kb('3'),'apre la S3 link nel pannello attivo (oppure Left/Right › S3 link, o il comando <code>s3</code>)'],['<code>s3://logs/2024/08/</code>','un prefisso di un bucket, con il profilo predefinito'],['<code>s3://</code>','l\'elenco dei bucket'],['<code>work s3://reports/</code>','con il profilo <code>work</code> di <code>~/.aws/config</code>'],['<code>minio s3://backups/ http://localhost:9000</code>','profilo e indirizzo del server, per MinIO e gli altri compatibili']])+`<h3>Cosa puoi fare</h3><ul><li>${kb('F5')} e ${kb('F6')} copiano e spostano fra il disco e S3 nei due sensi, e fra due prefissi. Una cartella intera viaggia con un solo comando <code>aws s3 cp --recursive</code>.</li><li>${kb('F3')} e la Quick view scaricano l'oggetto in una cartella temporanea e lo mostrano; ${kb('F4')} lo modifica e lo ricarica su S3.</li><li>${kb('F7')} crea una “cartella”: in S3 è un oggetto vuoto che finisce con <code>/</code>, come fa la console di AWS.</li><li>${kb('F8')} cancella <b>per sempre</b>: S3 non ha un Cestino. Su una cartella cancella tutti gli oggetti con quel prefisso. Se sul bucket hai attivato il versioning, le versioni precedenti restano.</li><li>${kb('Ctrl-X')} ${kb('3')} di nuovo cambia bucket o profilo; <code>..</code> in cima all'elenco dei bucket torna alla home.</li></ul><h3>Bucket enormi</h3><p>Nightglass chiede a S3 solo il livello che stai guardando (le “cartelle” con il delimitatore <code>/</code>) e al massimo 1000 voci alla volta. Un bucket di milioni di oggetti si apre quindi con la stessa velocità di uno con dieci. Se un livello ha più di 1000 voci, l'ultima riga dice <code>… more</code>: ${kb('Invio')} su quella riga carica le 1000 successive. Ordinamento e selezione per gruppo lavorano sulle voci caricate.</p><h3>Configurazione</h3><p>Installa la AWS CLI (Mac: <code>brew install awscli</code>, Windows: <code>winget install Amazon.AWSCLI</code>) e lancia <code>aws configure</code>, oppure <code>aws configure --profile nome</code> per un profilo in più. Per MinIO e gli altri server, se ricevi errori sui nomi dei bucket, imposta l'indirizzamento a percorso: <code>aws configure set s3.addressing_style path --profile nome</code>. Per R2 la regione è <code>auto</code>.</p>`},
 {id:'cmdline',t:'Riga di comando e console',b:`<p>Puoi scrivere in qualunque momento: i caratteri vanno sulla riga di comando in basso. ${kb('Invio')} esegue. A riga vuota ${kb('Invio')} apre il file sotto il cursore.</p><h3>Comandi interni (sempre)</h3>`+tbl([['<code>cd</code> percorso','cambia la cartella del pannello attivo (<code>~</code> è la home, <code>..</code> sale)'],['<code>mkdir</code>, <code>touch</code>','crea cartelle o file vuoti'],['<code>cp</code>, <code>mv</code>','copia o sposta: l\'ultimo argomento è la destinazione'],['<code>rm</code>','cancella (passa dalla finestra di conferma; sul disco vero va nel Cestino)'],['<code>edit</code>, <code>vi</code>, <code>nano</code>','apre l\'editor; se il file non c\'è lo crea al salvataggio'],['<code>view</code>, <code>less</code>, <code>more</code>','apre il visualizzatore'],['<code>open</code>','apre nella sua app (disco vero)'],['<code>reveal</code>','mostra nel Finder o in Esplora risorse (disco vero)'],['<code>hidden</code>','mostra o nasconde i file nascosti'],['<code>man</code> [argomento]','apre questo manuale, per esempio <code>man git</code>']])+`<h3>Sul disco vero</h3><p>Ogni altro comando va alla tua shell vera, nella cartella del pannello attivo, e l'output compare nel ${L_('term','terminale')}. Attenzione: lì si può lanciare qualunque comando, anche quelli che cancellano file per sempre.</p><h3>Sul disco demo: la console</h3><p>Ci sono <code>ls</code> (-l -a -h -t -S -r), <code>cat</code> (-n), <code>head</code> e <code>tail</code> (-n N), <code>wc</code>, <code>grep</code> (-i -n -r -v -c -l), <code>find</code> (-name -iname -type f|d), <code>tree</code>, <code>du</code> (-s -h), <code>stat</code>, <code>file</code>, <code>echo</code>, <code>pwd</code>, <code>history</code>, <code>clear</code>, <code>rmdir</code>, <code>tar</code>, <code>help</code>. L'output compare in una console a tutto schermo, che si apre da sola o con ${kb('Ctrl-O')}.</p><ul><li><code>*</code> e <code>?</code> si espandono; le virgolette proteggono gli spazi;</li><li><code>comando &gt; file</code> scrive l'output in un file, <code>&gt;&gt;</code> lo aggiunge in fondo;</li><li>nella console: ${kb('Tab')} completa i nomi, ${kb('↑','↓')} richiamano i comandi, ${kb('Ctrl-L')} pulisce, ${kb('Ctrl-O')} o ${kb('F10')} tornano ai pannelli;</li><li>le pipe (<code>|</code>) non ci sono.</li></ul>`},
 {id:'term',t:'Terminale (Ctrl-O)',b:`<p>Sul disco vero ${kb('Ctrl-O')} nasconde i pannelli e mostra la tua shell vera: quella predefinita del Mac o di Linux, PowerShell su Windows. La prima volta parte nella cartella del pannello attivo. ${kb('Ctrl-O')} o ${kb('F10')} tornano ai pannelli, che vengono riletti.</p><p>Quando scrivi un comando non interno nella riga di comando, l'app lo manda alla shell preceduto da un <code>cd</code> nella cartella del pannello. Se la shell termina (per esempio con <code>exit</code>), ${kb('Invio')} ne apre una nuova.</p><p>Passando con ${kb('Ctrl-O')}, la shell non segue da sola la cartella del pannello: se nel terminale fosse aperto un programma come vim o htop, il comando <code>cd</code> finirebbe scritto dentro quel programma.</p><p>Sul disco demo ${kb('Ctrl-O')} apre la ${L_('cmdline','console')}.</p>`},
-{id:'menus',t:'Menu e opzioni',b:tbl([['<b>Left / Right</b>','ordinamento per nome, dimensione o data; ordine inverso; Quick view; Shell link (SSH); Rescan; Home directory'],['<b>File</b>','View, Edit, New file, Copy, Rename/Move, Mkdir, Delete, Pack, Unpack, Batch rename, Undo batch rename, Select/Unselect group, Invert selection, Quit'],['<b>Command</b>','Terminal, Compare directories, Git branches, Git log, Swap panels, Same dir in other panel, Open in its app, Reveal in Finder/Explorer, e l\'eventuale installazione o permesso dell\'app desktop'],['<b>Options</b>','Skin…, Syntax highlighting, Show hidden files'],[kb('F2'),'menu rapido sul file sotto il cursore: View, Edit, Open, Reveal, Pack, Unpack, nome sulla riga di comando, stessa cartella nell\'altro pannello']])+`<p>Nei menu: ${kb('←','→')} cambiano menu, ${kb('↑','↓')} scelgono, ${kb('Invio')} esegue, ${kb('Esc')} chiude.</p><h3>Skin</h3><p>Options › Skin…: Midnight Commander (classico blu), Nightglass, Eclipse, Eclipse Dark, Dracula, Neon (Synthwave), Monokai, Solarized Dark, Solarized Light, Nord, One Dark, Gruvbox Dark. La skin colora anche il terminale e il codice, e resta salvata.</p>`},
-{id:'keys',t:'Tutte le scorciatoie',b:`<h3>Pannelli</h3>`+tbl([[kb('F1'),'manuale'],[kb('F2'),'menu rapido del file'],[kb('F3'),'visualizza'],[kb('F4'),'modifica'],[kb('Shift-F4'),'file nuovo'],[kb('F5'),'copia'],[kb('F6'),'sposta o rinomina'],[kb('F7'),'nuova cartella'],[kb('F8'),'cancella (Cestino sul disco vero)'],[kb('F9'),'menu'],[kb('F10'),'esci (sul disco vero nasconde la finestra)'],[kb('Tab'),'altro pannello'],[kb('Ctrl-T')+' '+kb('Ins'),'marca'],[kb('+')+' '+kb('\\')+' '+kb('*'),'marca, smarca, inverti per gruppo'],[kb('Ctrl-R'),'rileggi'],[kb('Ctrl-U'),'scambia pannelli'],[kb('Alt-I'),'stessa cartella nell\'altro pannello'],[kb('Alt-Invio'),'nome sulla riga di comando'],[kb('Alt-P')+' '+kb('Alt-N'),'cronologia comandi'],[kb('Ctrl-O'),'terminale o console'],[kb('Ctrl-X')+' '+kb('d'),'confronta cartelle'],[kb('Ctrl-X')+' '+kb('r'),'rinomina in blocco'],[kb('Ctrl-X')+' '+kb('q'),'Quick view'],[kb('Ctrl-X')+' '+kb('p'),'crea archivio'],[kb('Ctrl-X')+' '+kb('u'),'estrai archivio o file di posta'],[kb('Ctrl-X')+' '+kb('s'),'collegamento SSH'],[kb('Ctrl-X')+' '+kb('g'),'branch Git'],[kb('Ctrl-X')+' '+kb('l'),'log Git']])+`<h3>Visualizzatore</h3>`+tbl([[kb('F2'),'a capo / modifica esadecimale'],[kb('F4'),'esadecimale'],[kb('F5'),'vai a'],[kb('F6'),'salva (esadecimale)'],[kb('F7'),'cerca'],[kb('F8'),'anteprima / grezzo'],[kb('F10')+' '+kb('Esc')+' '+kb('q'),'esci']])+`<h3>Editor</h3>`+tbl([[kb('F2')+' '+kb('Ctrl-S'),'salva'],[kb('F10')+' '+kb('Esc'),'esci']])+`<p>Se il browser si prende un tasto funzione, premi ${kb('Esc')} e poi la cifra: ${kb('Esc')} ${kb('5')} equivale a ${kb('F5')}, ${kb('Esc')} ${kb('0')} a ${kb('F10')}.</p>`},
-{id:'limits',t:'Limiti e note',b:`<ul><li>Visualizzatore fino a 16 MB, editor fino a 2 MB, archivi e file di posta da sfogliare fino a 256 MB, archivi da creare fino a 512 MB.</li><li>Le cartelle di Thunderbird sono file mbox senza estensione (per esempio <code>Inbox</code>): per sfogliarle copiale con un nome che finisce in <code>.mbox</code>. Gli archivi di Outlook <code>.pst</code> non sono supportati.</li><li>Nei .msg molto vecchi il testo può esistere solo in RTF: lo trovi in <code>message.rtf</code>, che si apre con Word, TextEdit o LibreOffice.</li><li>In cartelle con più di 1500 elementi, dimensione e data compaiono solo per i primi 1500.</li><li>L'editor esadecimale sovrascrive e basta: non inserisce né toglie byte.</li><li>La console del disco demo non ha pipe; sul disco vero ogni comando non interno va alla shell vera.</li><li>Git, terminale e SSH funzionano solo nell'app desktop, con l'accesso completo.</li><li>Sul server SSH la cancellazione è definitiva, e i nomi di file che contengono a capo o tabulazioni non sono gestiti.</li><li>Il Cestino è quello di sistema: alcuni dischi di rete non ne hanno uno, e in quel caso F8 dà errore invece di cancellare.</li><li>Le anteprime di documenti (docx, odt) mostrano testo, titoli, elenchi e tabelle, non l'impaginazione esatta.</li><li>Ogni nuova versione dell'app desktop richiede di nuovo il permesso di accesso completo.</li></ul>`}
+{id:'menus',t:'Menu e opzioni',b:tbl([['<b>Left / Right</b>','ordinamento per nome, dimensione o data; ordine inverso; Quick view; Shell link (SSH); S3 link; Rescan; Home directory'],['<b>File</b>','View, Edit, New file, Copy, Rename/Move, Mkdir, Delete, Pack, Unpack, Batch rename, Undo batch rename, Select/Unselect group, Invert selection, Quit'],['<b>Command</b>','Terminal, Compare directories, Git branches, Git log, Swap panels, Same dir in other panel, Open in its app, Reveal in Finder/Explorer, e l\'eventuale installazione o permesso dell\'app desktop'],['<b>Options</b>','Skin…, Syntax highlighting, Show hidden files'],[kb('F2'),'menu rapido sul file sotto il cursore: View, Edit, Open, Reveal, Pack, Unpack, nome sulla riga di comando, stessa cartella nell\'altro pannello']])+`<p>Nei menu: ${kb('←','→')} cambiano menu, ${kb('↑','↓')} scelgono, ${kb('Invio')} esegue, ${kb('Esc')} chiude.</p><h3>Skin</h3><p>Options › Skin…: Midnight Commander (classico blu), Nightglass, Eclipse, Eclipse Dark, Dracula, Neon (Synthwave), Monokai, Solarized Dark, Solarized Light, Nord, One Dark, Gruvbox Dark. La skin colora anche il terminale e il codice, e resta salvata.</p>`},
+{id:'keys',t:'Tutte le scorciatoie',b:`<h3>Pannelli</h3>`+tbl([[kb('F1'),'manuale'],[kb('F2'),'menu rapido del file'],[kb('F3'),'visualizza'],[kb('F4'),'modifica'],[kb('Shift-F4'),'file nuovo'],[kb('F5'),'copia'],[kb('F6'),'sposta o rinomina'],[kb('F7'),'nuova cartella'],[kb('F8'),'cancella (Cestino sul disco vero)'],[kb('F9'),'menu'],[kb('F10'),'esci (sul disco vero nasconde la finestra)'],[kb('Tab'),'altro pannello'],[kb('Ctrl-T')+' '+kb('Ins'),'marca'],[kb('+')+' '+kb('\\')+' '+kb('*'),'marca, smarca, inverti per gruppo'],[kb('Ctrl-R'),'rileggi'],[kb('Ctrl-U'),'scambia pannelli'],[kb('Alt-I'),'stessa cartella nell\'altro pannello'],[kb('Alt-Invio'),'nome sulla riga di comando'],[kb('Alt-P')+' '+kb('Alt-N'),'cronologia comandi'],[kb('Ctrl-O'),'terminale o console'],[kb('Ctrl-X')+' '+kb('d'),'confronta cartelle'],[kb('Ctrl-X')+' '+kb('r'),'rinomina in blocco'],[kb('Ctrl-X')+' '+kb('q'),'Quick view'],[kb('Ctrl-X')+' '+kb('p'),'crea archivio'],[kb('Ctrl-X')+' '+kb('u'),'estrai archivio o file di posta'],[kb('Ctrl-X')+' '+kb('s'),'collegamento SSH'],[kb('Ctrl-X')+' '+kb('3'),'collegamento S3'],[kb('Ctrl-X')+' '+kb('g'),'branch Git'],[kb('Ctrl-X')+' '+kb('l'),'log Git']])+`<h3>Visualizzatore</h3>`+tbl([[kb('F2'),'a capo / modifica esadecimale'],[kb('F4'),'esadecimale'],[kb('F5'),'vai a'],[kb('F6'),'salva (esadecimale)'],[kb('F7'),'cerca'],[kb('F8'),'anteprima / grezzo'],[kb('F10')+' '+kb('Esc')+' '+kb('q'),'esci']])+`<h3>Editor</h3>`+tbl([[kb('F2')+' '+kb('Ctrl-S'),'salva'],[kb('F10')+' '+kb('Esc'),'esci']])+`<p>Se il browser si prende un tasto funzione, premi ${kb('Esc')} e poi la cifra: ${kb('Esc')} ${kb('5')} equivale a ${kb('F5')}, ${kb('Esc')} ${kb('0')} a ${kb('F10')}.</p>`},
+{id:'limits',t:'Limiti e note',b:`<ul><li>Visualizzatore fino a 16 MB, editor fino a 2 MB, archivi e file di posta da sfogliare fino a 256 MB, archivi da creare fino a 512 MB.</li><li>Le cartelle di Thunderbird sono file mbox senza estensione (per esempio <code>Inbox</code>): per sfogliarle copiale con un nome che finisce in <code>.mbox</code>. Gli archivi di Outlook <code>.pst</code> non sono supportati.</li><li>Nei .msg molto vecchi il testo può esistere solo in RTF: lo trovi in <code>message.rtf</code>, che si apre con Word, TextEdit o LibreOffice.</li><li>In cartelle con più di 1500 elementi, dimensione e data compaiono solo per i primi 1500.</li><li>L'editor esadecimale sovrascrive e basta: non inserisce né toglie byte.</li><li>La console del disco demo non ha pipe; sul disco vero ogni comando non interno va alla shell vera.</li><li>Git, terminale, SSH e S3 funzionano solo nell'app desktop, con l'accesso completo.</li><li>Su S3 ogni operazione lancia il comando <code>aws</code>, che impiega circa mezzo secondo ad avviarsi: copiare molti file singoli è lento, copiare una cartella intera no. Nightglass non crea né cancella bucket.</li><li>Sul server SSH la cancellazione è definitiva, e i nomi di file che contengono a capo o tabulazioni non sono gestiti.</li><li>Il Cestino è quello di sistema: alcuni dischi di rete non ne hanno uno, e in quel caso F8 dà errore invece di cancellare.</li><li>Le anteprime di documenti (docx, odt) mostrano testo, titoli, elenchi e tabelle, non l'impaginazione esatta.</li><li>Ogni nuova versione dell'app desktop richiede di nuovo il permesso di accesso completo.</li></ul>`}
 ];
 MAN.find(s=>s.id==='index').b=MAN.find(s=>s.id==='index').b.replace(/data-h="(\w+)"><\/button>/g,(m,id)=>`data-h="${id}">${MAN.find(s=>s.id===id).t}</button>`);
 let manS={cur:'index',stack:[],prev:'panels'};
@@ -1430,7 +1527,7 @@ $('#manq').addEventListener('input',e=>manSearch(e.target.value));
 function help(){openMan(mode==='view'?(V&&V.mode==='hex'?'hex':'viewer'):mode==='edit'?'editor':mode==='con'?'cmdline':'index')}
 
 /* ---------- menus ---------- */
-function panelMenu(i){const p=P[i],s=k=>()=>{p.sortK=k;build(p);render(p)};return [{l:'Sort by name',chk:p.sortK==='name',f:s('name')},{l:'Sort by size',chk:p.sortK==='size',f:s('size')},{l:'Sort by modify time',chk:p.sortK==='mtime',f:s('mtime')},{l:'Reverse order',chk:p.sortD<0,f:()=>{p.sortD*=-1;build(p);render(p)}},{sep:1},{l:'Quick view',k:'Ctrl-X q',chk:!!p.qv,f:()=>setQV(i,!p.qv)},{l:'Shell link (SSH)…',k:'Ctrl-X s',dis:!live(),f:()=>sshDlg(i)},{sep:1},{l:'Rescan',k:'Ctrl-R',f:()=>reload(p)},{l:'Home directory',k:'cd ~',f:()=>cd(p,B.home)}]}
+function panelMenu(i){const p=P[i],s=k=>()=>{p.sortK=k;build(p);render(p)};return [{l:'Sort by name',chk:p.sortK==='name',f:s('name')},{l:'Sort by size',chk:p.sortK==='size',f:s('size')},{l:'Sort by modify time',chk:p.sortK==='mtime',f:s('mtime')},{l:'Reverse order',chk:p.sortD<0,f:()=>{p.sortD*=-1;build(p);render(p)}},{sep:1},{l:'Quick view',k:'Ctrl-X q',chk:!!p.qv,f:()=>setQV(i,!p.qv)},{l:'Shell link (SSH)…',k:'Ctrl-X s',dis:!live(),f:()=>sshDlg(i)},{l:'S3 link…',k:'Ctrl-X 3',dis:!live(),f:()=>s3Dlg(i)},{sep:1},{l:'Rescan',k:'Ctrl-R',f:()=>reload(p)},{l:'Home directory',k:'cd ~',f:()=>cd(p,B.home)}]}
 const MENUS=[
  {n:'Left',it:()=>panelMenu(0)},
  {n:'File',it:()=>[{l:'View',k:'F3',f:()=>fkey(3)},{l:'Edit',k:'F4',f:()=>fkey(4)},{l:'New file…',k:'Shift-F4',f:newFileDlg},{l:'Copy',k:'F5',f:()=>fkey(5)},{l:'Rename/Move',k:'F6',f:()=>fkey(6)},{l:'Mkdir',k:'F7',f:()=>fkey(7)},{l:'Delete',k:'F8',f:()=>fkey(8)},{sep:1},{l:'Pack into archive…',k:'Ctrl-X p',f:packDlg},{l:'Unpack archive…',k:'Ctrl-X u',f:unpackDlg},{sep:1},{l:'Batch rename…',k:'Ctrl-X r',f:batchRename},{l:'Undo batch rename',dis:!lastBatch,f:undoBatch},{sep:1},{l:'Select group',k:'+',f:()=>group('sel')},{l:'Unselect group',k:'\\',f:()=>group('unsel')},{l:'Invert selection',k:'*',f:()=>group('inv')},{sep:1},{l:'Quit',k:'F10',f:quit}]},
@@ -1450,7 +1547,7 @@ function openMenu(i,popup){
 function closeMenu(){menuI=-1;$('#dd').className='';document.querySelectorAll('#mb [data-m]').forEach(b=>b.classList.remove('on'))}
 function menuMove(d){if(!curItems.length)return;let k=menuSel;for(let j=0;j<curItems.length;j++){k=(k+d+curItems.length)%curItems.length;if(!curItems[k].sep&&!curItems[k].dis)break}menuSel=k;document.querySelectorAll('#dd [data-mi]').forEach(b=>b.classList.toggle('on',+b.dataset.mi===k))}
 function menuRun(k){const x=curItems[k];closeMenu();focusCmd();if(x&&x.f&&!x.dis)x.f()}
-function userMenu(){const x=CUR();openMenu(9,[{l:'View file',k:'F3',f:()=>fkey(3)},{l:'Edit file',k:'F4',f:()=>fkey(4)},{l:'Open in its app',dis:!live()||!x||x.dir||isSsh(x.path),f:()=>Live.open(x.path).catch(e=>err('Open',nice(e)))},{l:'Reveal in Finder/Explorer',dis:!live(),f:()=>Live.reveal(x&&!x.up?x.path:AP().path).catch(e=>err('Reveal',nice(e)))},{l:'Pack into archive…',k:'Ctrl-X p',f:packDlg},{l:'Unpack archive…',k:'Ctrl-X u',f:unpackDlg},{l:'Put name on command line',k:'Alt-Enter',f:nameToCmd},{l:'Same dir in other panel',k:'Alt-I',f:()=>cd(OP(),AP().path)}])}
+function userMenu(){const x=CUR();openMenu(9,[{l:'View file',k:'F3',f:()=>fkey(3)},{l:'Edit file',k:'F4',f:()=>fkey(4)},{l:'Open in its app',dis:!live()||!x||x.dir||isRem(x.path),f:()=>Live.open(x.path).catch(e=>err('Open',nice(e)))},{l:'Reveal in Finder/Explorer',dis:!live(),f:()=>Live.reveal(x&&!x.up?x.path:AP().path).catch(e=>err('Reveal',nice(e)))},{l:'Pack into archive…',k:'Ctrl-X p',f:packDlg},{l:'Unpack archive…',k:'Ctrl-X u',f:unpackDlg},{l:'Put name on command line',k:'Alt-Enter',f:nameToCmd},{l:'Same dir in other panel',k:'Alt-I',f:()=>cd(OP(),AP().path)}])}
 function swap(){P.forEach((q,i)=>{if(q.qv)setQV(i,false)});const a=P[0],b=P[1];for(const k of ['path','ents','list','cur','top','tag','sortK','sortD','gref','git','arc']){const t=a[k];a[k]=b[k];b[k]=t}renderAll();savePrefs()}
 function skin(s){applySkin(s);savePrefs();renderAll();hint('Skin: '+(SKINS[s]||SKINS.classic).n)}
 function toggleHidden(){showHidden=!showHidden;P.forEach(p=>{build(p);render(p)});savePrefs();hint('Hidden files '+(showHidden?'shown':'hidden'))}
@@ -1557,10 +1654,11 @@ async function runCmd(line){
   case 'view':case 'less':case 'more':{const s=await st(arg,'file');if(s)await view(s);return}
   case 'cp':case 'mv':{const ex=await expand(toks.slice(1));if(ex.length<2)return fail(`Usage: ${c} <source>… <destination>`);const dst=abs(ex[ex.length-1]),DF=fsAt(dst),ds=await DF.stat(dst),src=ex.slice(0,-1);if(src.length>1&&!(ds&&ds.dir))return fail('Destination must be a directory');for(const sname of src){const s=await st(sname);if(!s)continue;const t=ds&&ds.dir?join(dst,s.name):dst;if(await DF.exists(t)){fail(`${shortP(t)}: File exists`);continue}const SF=fsAt(s.path);if(c==='mv'&&SF===DF)await DF.rename(s.path,t);else{await copyTree(s.path,t,async()=>'skip',SF,DF);if(c==='mv')await SF.remove(s.path)}}await reloadBoth();return}
   case 'rm':case 'del':{const ex=await expand(toks.slice(1).filter(x=>!/^-[rRf]+$/.test(x.t)));const l=[];for(const n of ex){const s=await st(n);if(s)l.push(s)}if(l.length)await del(l);return}
-  case 'open':{const s=await st(arg||'.');if(!s)return;if(s.dir)await cd(p,s.path);else if(live()&&!isSsh(s.path))await Live.open(s.path);else await view(s);return}
+  case 'open':{const s=await st(arg||'.');if(!s)return;if(s.dir)await cd(p,s.path);else if(live()&&!isRem(s.path))await Live.open(s.path);else await view(s);return}
   case 'reveal':{if(!live())return fail('reveal works only on the real disk');const s=await st(arg||'.');if(s)await Live.reveal(s.path);return}
   case 'hidden':toggleHidden();return;
   case 'ssh':case 'sftp':if(!a.length)return sshDlg(act);break;
+  case 's3':if(!a.length)return s3Dlg(act);break;
   case 'man':{const q=arg.toLowerCase(),s=q&&(MAN.find(x=>x.id===q)||MAN.find(x=>x.t.toLowerCase().includes(q)));openMan(s?s.id:'index');if(q&&!s){$('#manq').value=arg;manSearch(arg)}return}
   case 'exit':case 'quit':return mode==='con'?closeCon():quit();
  }
@@ -1622,8 +1720,8 @@ document.addEventListener('keydown',e=>{
  if(mode==='edit'){if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==='s'){e.preventDefault();saveEd()}return}
  const cmd=$('#cmd'),empty=!cmd.value;
  const k=e.key,ctrl=e.ctrlKey||e.metaKey;
- if(cxAt&&Date.now()-cxAt<2000&&!ctrl){cxAt=0;e.preventDefault();const q=k.toLowerCase();if(q==='d')compareDirs();else if(q==='r')batchRename();else if(q==='q')setQV(1-act,!OP().qv);else if(q==='g')gitBranches();else if(q==='l')gitLog();else if(q==='p')packDlg();else if(q==='u')unpackDlg();else if(q==='s')sshDlg(act);else hint('Ctrl-X '+k+': not bound');return}
- if(ctrl&&k.toLowerCase()==='x'&&empty){e.preventDefault();cxAt=Date.now();hint('Ctrl-X, then: d compare, r rename, q quick view, s ssh, p pack, u unpack, g git branches, l git log');return}
+ if(cxAt&&Date.now()-cxAt<2000&&!ctrl){cxAt=0;e.preventDefault();const q=k.toLowerCase();if(q==='d')compareDirs();else if(q==='r')batchRename();else if(q==='q')setQV(1-act,!OP().qv);else if(q==='g')gitBranches();else if(q==='l')gitLog();else if(q==='p')packDlg();else if(q==='u')unpackDlg();else if(q==='s')sshDlg(act);else if(q==='3')s3Dlg(act);else hint('Ctrl-X '+k+': not bound');return}
+ if(ctrl&&k.toLowerCase()==='x'&&empty){e.preventDefault();cxAt=Date.now();hint('Ctrl-X, then: d compare, r rename, q quick view, s ssh, 3 S3, p pack, u unpack, g git branches, l git log');return}
  if(ctrl&&k.toLowerCase()==='o'){e.preventDefault();live()?openTerm():openCon();return}
  if(e.altKey&&(k.toLowerCase()==='p'||k.toLowerCase()==='n')){e.preventDefault();histNav(k.toLowerCase()==='p'?-1:1);return}
  if(k==='Tab'){e.preventDefault();if(OP().qv)return hint('Quick view is on in the other panel: Ctrl-X q closes it.');setAct(1-act);return}
@@ -1702,7 +1800,7 @@ const qPath=p=>Live.plat==='win32'?`Set-Location -LiteralPath '${p.replace(/'/g,
 function fitTerm(){try{T.fit.fit();if(T.pty&&T.alive)T.pty.resize(T.term.cols,T.term.rows).catch(()=>{})}catch(e){}}
 function spawnShell(){
  fitTerm();
- const pty=Live.D.pty.spawn(undefined,[],{cols:T.term.cols,rows:T.term.rows,cwd:AP().path});
+ const pty=Live.D.pty.spawn(undefined,[],{cols:T.term.cols,rows:T.term.rows,cwd:isRem(AP().path)?B.home:AP().path});
  T.pty=pty;T.alive=true;
  pty.onData(d=>T.term.write(d));
  pty.onExit(x=>{T.alive=false;T.term.write(`\r\n[shell exited (${x&&x.exitCode}). Enter starts a new one, Ctrl-O goes back to the panels]\r\n`)});
@@ -1724,7 +1822,7 @@ async function openTerm(line){
   }
   if(!T.alive)spawnShell();
   fitTerm();T.term.focus();
-  if(line)await T.pty.write((isSsh(AP().path)?sshLine(sshTarget(AP().path),`cd -- ${rq(sshRemote(AP().path))} && ${line}`,true,['-t']):qPath(AP().path)+line)+'\r');
+  if(line)await T.pty.write((isSsh(AP().path)?sshLine(sshTarget(AP().path),`cd -- ${rq(sshRemote(AP().path))} && ${line}`,true,['-t']):qPath(isS3(AP().path)?B.home:AP().path)+line)+'\r');
  }catch(e){closeTerm();err('Subshell',`Cannot open the terminal\n${nice(e)}`)}
 }
 function closeTerm(){mode='panels';document.body.classList.remove('term');fnbar();reloadBoth().then(focusCmd)}

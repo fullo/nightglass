@@ -1,0 +1,139 @@
+#!/usr/bin/env python3
+# SPDX-License-Identifier: GPL-2.0-or-later
+# Copyright (C) 2026 Francesco Fullone
+"""Fake `aws` CLI for the tests: the S3 commands Nightglass uses, on a local folder.
+
+Buckets are the folders of NG_FAKE_S3 (default /tmp/ng-fakes3). An object key
+a/b/c is the file a/b/c; a "folder" object a/b/ is the marker file a/b/.ng-dir.
+Profile "nocreds" fails like a machine without keys.
+"""
+import datetime, json, os, shutil, sys
+
+ROOT = os.environ.get('NG_FAKE_S3', '/tmp/ng-fakes3')
+MARK = '.ng-dir'
+argv = sys.argv[1:]
+if os.environ.get('NG_FAKE_S3_LOG'): open(os.environ['NG_FAKE_S3_LOG'], 'a').write(' '.join(argv) + '\n')
+opts, args, flags = {}, [], set()
+i = 0
+while i < len(argv):
+    a = argv[i]
+    if a in ('--profile', '--endpoint-url', '--output', '--bucket', '--prefix', '--delimiter', '--max-items', '--starting-token', '--key', '--body'):
+        opts[a] = argv[i + 1]; i += 2; continue
+    if a.startswith('--'): flags.add(a); i += 1; continue
+    args.append(a); i += 1
+
+def die(msg, code=254): sys.stderr.write(msg + '\n'); sys.exit(code)
+def iso(p): return datetime.datetime.fromtimestamp(os.path.getmtime(p), datetime.timezone.utc).isoformat()
+def fpath(b, k): return os.path.join(ROOT, b, *[x for x in k.split('/') if x]) if k else os.path.join(ROOT, b)
+
+if '--version' in flags: print('aws-cli/2.15.0 Python/3 fake'); sys.exit(0)
+if opts.get('--profile') == 'nocreds': die('Unable to locate credentials. You can configure credentials by running "aws configure".', 253)
+
+def keys_under(b, prefix):
+    """All keys of bucket b starting with prefix, sorted, as (key, path, is_marker)."""
+    base = fpath(b, prefix.rsplit('/', 1)[0] if '/' in prefix else '')
+    out = []
+    if not os.path.isdir(base): return out
+    for dp, dns, fns in os.walk(base):
+        for f in fns:
+            p = os.path.join(dp, f); rel = os.path.relpath(p, os.path.join(ROOT, b)).replace(os.sep, '/')
+            k = rel[:-len(MARK)] if f == MARK else rel
+            if k.startswith(prefix): out.append((k, p, f == MARK))
+    return sorted(out)
+
+def s3url(u):
+    assert u.startswith('s3://'); r = u[5:]; b, _, k = r.partition('/'); return b, k
+
+if args[:2] == ['s3api', 'list-buckets']:
+    bs = sorted(d for d in os.listdir(ROOT) if os.path.isdir(os.path.join(ROOT, d))) if os.path.isdir(ROOT) else []
+    print(json.dumps({'Buckets': [{'Name': d, 'CreationDate': iso(os.path.join(ROOT, d))} for d in bs], 'Owner': {}})); sys.exit(0)
+
+if args[:2] == ['s3api', 'list-objects-v2']:
+    b, pfx, dl = opts['--bucket'], opts.get('--prefix', ''), opts.get('--delimiter')
+    if not os.path.isdir(fpath(b, '')): die('An error occurred (NoSuchBucket) when calling the ListObjectsV2 operation: The specified bucket does not exist')
+    items, seen = [], set()
+    if dl == '/':   # one level: read only the folder of the prefix, like S3 does not need to scan
+        d = fpath(b, pfx if pfx.endswith('/') else pfx.rsplit('/', 1)[0] if '/' in pfx else '')
+        head = pfx if pfx.endswith('/') else (pfx.rsplit('/', 1)[0] + '/' if '/' in pfx else '')
+        names = sorted(os.listdir(d)) if os.path.isdir(d) else []
+        for n in names:
+            p = os.path.join(d, n)
+            if n == MARK: k = head; items.append(('C', k, p)) if k.startswith(pfx) and k else None; continue
+            k = head + n
+            if not k.startswith(pfx): continue
+            items.append(('P', k + '/', p) if os.path.isdir(p) else ('C', k, p))
+        items.sort(key=lambda x: x[1])
+    else:
+        items = [('C', k, p) for k, p, m in keys_under(b, pfx)]
+    start = int(opts.get('--starting-token', '0')); mx = int(opts.get('--max-items', '1000000'))
+    page = items[start:start + mx]
+    out = {'Contents': [{'Key': k, 'Size': os.path.getsize(p), 'LastModified': iso(p), 'ETag': '"x"'} for t, k, p in page if t == 'C'],
+           'CommonPrefixes': [{'Prefix': k} for t, k, p in page if t == 'P']}
+    if start + mx < len(items): out['NextToken'] = str(start + mx)
+    print(json.dumps({k: v for k, v in out.items() if v != []})); sys.exit(0)
+
+if args[:2] == ['s3api', 'head-object']:
+    p = fpath(opts['--bucket'], opts['--key'])
+    if opts['--key'].endswith('/') : p = os.path.join(p, MARK)
+    if not os.path.isfile(p): die('An error occurred (404) when calling the HeadObject operation: Not Found')
+    print(json.dumps({'ContentLength': os.path.getsize(p), 'LastModified': iso(p)})); sys.exit(0)
+
+if args[:2] == ['s3api', 'put-object']:
+    b, k = opts['--bucket'], opts['--key']
+    if k.endswith('/'): os.makedirs(fpath(b, k), exist_ok=True); open(os.path.join(fpath(b, k), MARK), 'wb').close()
+    else:
+        os.makedirs(os.path.dirname(fpath(b, k)), exist_ok=True)
+        data = open(opts['--body'], 'rb').read() if '--body' in opts else b''
+        open(fpath(b, k), 'wb').write(data)
+    print(json.dumps({'ETag': '"x"'})); sys.exit(0)
+
+def rm_key(b, k):
+    p = fpath(b, k); os.remove(p)
+    d = os.path.dirname(p)
+    while d != fpath(b, '') and not os.listdir(d): os.rmdir(d); d = os.path.dirname(d)
+
+def cp(src, dst, rec, move):
+    n = 0; verb = 'move' if move else None
+    if rec:
+        if src.startswith('s3://'):
+            b, k = s3url(src); pairs = [(kk[len(k):], p, m, (b, kk)) for kk, p, m in keys_under(b, k)]
+        else:
+            pairs = []
+            for dp, dns, fns in os.walk(src):
+                for f in fns: p = os.path.join(dp, f); pairs.append((os.path.relpath(p, src).replace(os.sep, '/'), p, False, None))
+        for rel, p, m, sk in sorted(pairs):
+            if m: continue
+            if dst.startswith('s3://'):
+                db, dk = s3url(dst); t = fpath(db, dk + rel); os.makedirs(os.path.dirname(t), exist_ok=True); shutil.copyfile(p, t)
+            else:
+                t = os.path.join(dst, *rel.split('/')); os.makedirs(os.path.dirname(t), exist_ok=True); shutil.copyfile(p, t)
+            kind = verb or ('copy' if src.startswith('s3://') and dst.startswith('s3://') else 'upload' if dst.startswith('s3://') else 'download')
+            print(f'{kind}: {src}{rel} to {dst}{rel}'); n += 1
+            if move: (rm_key(*sk) if sk else os.remove(p))
+        if move and src.startswith('s3://'):
+            b, k = s3url(src); mk = os.path.join(fpath(b, k), MARK)
+            if os.path.exists(mk): rm_key(b, k + MARK)
+        return
+    if src.startswith('s3://'):
+        b, k = s3url(src); p = fpath(b, k)
+        if not os.path.isfile(p): die(f'fatal error: An error occurred (404) when calling the HeadObject operation: Key "{k}" does not exist', 1)
+    else: p = src
+    if dst.startswith('s3://'):
+        db, dk = s3url(dst); t = fpath(db, dk); os.makedirs(os.path.dirname(t), exist_ok=True)
+    else: t = dst
+    shutil.copyfile(p, t)
+    if move: (rm_key(*s3url(src)) if src.startswith('s3://') else os.remove(p))
+
+if args[:2] in (['s3', 'cp'], ['s3', 'mv']):
+    cp(args[2], args[3], '--recursive' in flags, args[1] == 'mv'); sys.exit(0)
+
+if args[:2] == ['s3', 'rm']:
+    b, k = s3url(args[2])
+    if '--recursive' in flags:
+        for kk, p, m in keys_under(b, k): rm_key(b, kk + (MARK if m else ''))
+    else:
+        if not os.path.isfile(fpath(b, k)): sys.exit(0)
+        rm_key(b, k)
+    sys.exit(0)
+
+die('fake aws: unsupported command: ' + ' '.join(argv), 252)
