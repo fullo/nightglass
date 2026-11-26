@@ -44,6 +44,20 @@ def fake_home():
             ti = tarfile.TarInfo(name); ti.size = len(data); t.addfile(ti, io.BytesIO(data))
     open(h + '/backup-2026-11-25.tgz', 'wb').write(b.getvalue())
     mailfixtures.main(h + '/Mail'); os.remove(h + '/Mail/expected.json')
+    # a fake S3 store for tests/fakebin/aws, and a small SQLite database
+    s3 = os.environ.setdefault('NG_FAKE_S3', '/tmp/ng-fakes3'); shutil.rmtree(s3, ignore_errors=True)
+    import random, sqlite3; rnd = random.Random(7)
+    for m in ('09', '10', '11'): os.makedirs(f'{s3}/logs/2026/{m}')
+    for d in range(1, 27): open(f'{s3}/logs/2026/11/api-2026-11-{d:02d}.log.gz', 'wb').write(os.urandom(rnd.randint(20000, 90000)))
+    os.makedirs(f'{s3}/backups/db'); open(f'{s3}/backups/db/shop-2026-11-25.sqlite.gz', 'wb').write(os.urandom(50000))
+    os.makedirs(h + '/data'); con = sqlite3.connect(h + '/data/shop.sqlite')
+    con.executescript('CREATE TABLE customers(id INTEGER PRIMARY KEY, name TEXT, city TEXT, since TEXT);'
+                      'CREATE TABLE orders(id INTEGER PRIMARY KEY, customer INTEGER REFERENCES customers(id), day TEXT, total_eur REAL, status TEXT);'
+                      'CREATE VIEW open_orders AS SELECT * FROM orders WHERE status <> "delivered";')
+    cs = [('Anna Ricci', 'Faenza'), ('Bruno Galli', 'Bologna'), ('Carla Conti', 'Ravenna'), ('Davide Moro', 'Forlì'), ('Elena Sala', 'Imola'), ('Fabio Riva', 'Cesena')]
+    con.executemany('INSERT INTO customers VALUES (?,?,?,?)', [(i + 1, n, c, f'202{rnd.randint(1, 5)}-0{rnd.randint(1, 9)}-1{rnd.randint(0, 9)}') for i, (n, c) in enumerate(cs)])
+    con.executemany('INSERT INTO orders VALUES (?,?,?,?,?)', [(i, rnd.randint(1, 6), f'2026-11-{1 + i % 26:02d}', round(rnd.uniform(12, 480), 2), rnd.choice(['delivered', 'delivered', 'shipped', 'paid'])) for i in range(1, 241)])
+    con.commit(); con.close()
 
 
 async def row(pg, panel, name):
@@ -132,7 +146,17 @@ async def main():
         await k.press('Tab'); await lcmd('cd ~/Documents'); await k.press('Tab'); await row(lv, 'pL', 'Fattura'); await k.press('Insert'); await row(lv, 'pL', 'logo.png'); await k.press('Insert'); await lv.wait_for_timeout(200)
         await shot(lv, '17-mail-folder')
         await lcmd('cd ~/Mail'); await row(lv, 'pL', 'sample.eml'); await k.press('F3'); await lv.wait_for_timeout(1500)
-        await shot(lv, '18-mail-preview'); await k.press('Escape')
+        await shot(lv, '18-mail-preview'); await k.press('Escape'); await lv.wait_for_timeout(300)
+        await lcmd('cd ~/data'); await row(lv, 'pL', 'shop.sqlite'); await k.press('Enter'); await lv.wait_for_timeout(1200)
+        await k.type("SELECT c.city, count(*) AS orders, round(sum(o.total_eur), 2) AS total_eur FROM orders o JOIN customers c ON c.id = o.customer GROUP BY c.city ORDER BY total_eur DESC"); await k.press('Enter'); await lv.wait_for_timeout(1500)
+        await shot(lv, '20-sqlite-query'); await k.press('Escape'); await lv.wait_for_timeout(300)
+        await row(lv, 'pL', 'tables'); await k.press('Enter'); await lv.wait_for_timeout(500); await row(lv, 'pL', 'orders.csv')
+        await k.press('Control+x'); await k.press('q'); await lv.wait_for_timeout(1500)
+        await shot(lv, '21-sqlite-table'); await k.press('Control+x'); await k.press('q'); await lv.wait_for_timeout(300)
+        await lcmd('cd ~/Documents'); await k.press('Tab')
+        await k.press('Control+x'); await k.press('3'); await lv.wait_for_selector('#din'); await lv.fill('#din', 's3://logs/2026/11/'); await k.press('Enter'); await lv.wait_for_timeout(1800)
+        await k.press('Insert'); await k.press('Insert'); await k.press('Insert'); await lv.wait_for_timeout(200)
+        await shot(lv, '19-s3')
 
         ph = await b.new_page(viewport={'width': 390, 'height': 780}, has_touch=True, is_mobile=True)
         await ph.goto(URL); await ph.wait_for_timeout(1200); await shot(ph, '15-phone')

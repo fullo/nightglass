@@ -8,8 +8,9 @@
 | `jszip.min.js` | JSZip | 3.10.1 | MIT or GPL-3.0 (your choice) |
 | `UTIF.js` | UTIF.js (Photopea) | 3.1.0 | MIT |
 | `highlight.min.js` | highlight.js (`@highlightjs/cdn-assets`) | 11.9.0 | BSD-3-Clause |
+| `sql-wasm.js`, `sql-wasm.wasm` | sql.js (SQLite compiled to WebAssembly; SQLite itself is public domain) | 1.10.3 | MIT |
 
-Each file is the npm release of that version, unchanged except that the trailing `//# sourceMappingURL=…` comment was removed (the source maps are not shipped).
+Each file is the npm release of that version, unchanged except that the trailing `//# sourceMappingURL=…` comment was removed (the source maps are not shipped). The sql.js files are `dist/sql-wasm.js` and `dist/sql-wasm.wasm` exactly as published.
 
 The fonts (IBM Plex Mono, JetBrains Mono, Source Code Pro, Share Tech Mono) load from Google Fonts under the SIL Open Font License; they are not in this repository.
 
@@ -25,6 +26,8 @@ acc7e41455a80765b5fd9c7ee1b8078a6d160bbbca455aeae854de65c947d59e  vendor/jszip.m
 deb07bf230d1cb3e190bc5adc6743f35c6531b6571d1e5469b24f452a7f0f4ab  vendor/mammoth.browser.min.js
 5b5799e6f8c680663207ac5b42ee14eed2a406fa7af48f50c154f0c0b1566946  vendor/pdf.min.js
 feabdf309770ed24bba31a5467836cdc8cf639c705af27d52b585b041bb8527b  vendor/pdf.worker.min.js
+558a72c3ab3415d0e6d243cfd23f9d61543600d59054b4b7b8da3cd65f6b9fd4  vendor/sql-wasm.js
+d7e61b828523001f26ce0b3f88dabcf6c12e5e6edf80eb4f08b26ac7b946ff88  vendor/sql-wasm.wasm
 7a88e46a58847d3f17109e3d48cc8aa056a01997d00ceb76035f63370712d858  vendor/xterm.js
 ```
 

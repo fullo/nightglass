@@ -9,7 +9,7 @@ The person wants their **own private copy** as an artifact on their account, so 
 1. **Do not change any file.** Publish the repository as it is.
 2. **Publish these files**, and only these, with your Artifact tool, keeping their paths:
    - `index.html`
-   - every file in `vendor/` (`xterm.js`, `addon-fit.js`, `pdf.min.js`, `pdf.worker.min.js`, `mammoth.browser.min.js`, `jszip.min.js`, `UTIF.js`, `highlight.min.js`)
+   - every file in `vendor/` (`xterm.js`, `addon-fit.js`, `pdf.min.js`, `pdf.worker.min.js`, `mammoth.browser.min.js`, `jszip.min.js`, `UTIF.js`, `highlight.min.js`, `sql-wasm.js`, `sql-wasm.wasm`)
    - every file in `icons/` (`icon-32.png`, `icon-64.png`, `icon-180.png`, `icon-256.png`, `icon-512.png`, `icon.svg`)
 
    Do not publish `tests/`, `docs/`, `README.md`, `CLAUDE.md`, `LICENSE` or `THIRD_PARTY.md`.
@@ -31,7 +31,7 @@ The person wants their **own private copy** as an artifact on their account, so 
    4. click **Grant full access** in the hint line and confirm. The top right corner then shows `LIVE DISK`;
    5. press **F1** for the manual (in Italian).
 
-   Say plainly that full access lets the app read, change and delete their files and run commands, and that F8 moves files to the system Trash, except on SSH servers.
+   Say plainly that full access lets the app read, change and delete their files and run commands, and that F8 moves files to the system Trash, except on SSH servers and S3 buckets, where it deletes for good.
 
 ## When someone asks you to update their copy
 

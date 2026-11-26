@@ -1,6 +1,6 @@
 # Nightglass File System
 
-A two-panel file manager modelled on Midnight Commander. It runs as a [Claude](https://claude.ai) artifact and installs as a desktop app from the Claude desktop app. In a browser it works on a demo drive with made-up files; installed as an app it works on the real files of your computer, with Git, a real terminal and SSH.
+A two-panel file manager modelled on Midnight Commander. It runs as a [Claude](https://claude.ai) artifact and installs as a desktop app from the Claude desktop app. In a browser it works on a demo drive with made-up files; installed as an app it works on the real files of your computer, with Git, a real terminal, SSH servers and S3 buckets. It also opens mail files and SQLite databases as folders.
 
 ![The two panels in each of the 12 skins, one after the other](docs/screenshots/00-skins.gif)
 
@@ -18,7 +18,7 @@ Nightglass can read, write and delete files and run commands on your computer. C
 
 - A Claude account, signed in to the **Claude desktop app** on macOS or Windows.
 - A Claude conversation that can create artifacts (published pages). If Claude answers that it cannot publish artifacts, check that artifacts are turned on in your Claude settings.
-- For Git, `git` installed on your computer. For SSH, the `ssh` command (built into macOS, Linux and recent Windows) and your SSH keys.
+- For Git, `git` installed on your computer. For SSH, the `ssh` command (built into macOS, Linux and recent Windows) and your SSH keys. For S3, the AWS CLI (`aws`) with your keys in `~/.aws`. For SQLite, the `sqlite3` command if you have it (built into macOS and most Linux); without it a built-in engine is used, for databases up to 256 MB.
 
 ### Steps
 
@@ -82,6 +82,10 @@ Open `index.html` from the downloaded folder in any web browser. It runs on the 
 | **Terminal** (Ctrl-O, desktop app): your real shell in the panel's folder. | **Manual** (F1, in Italian): contents, links, search, opens on the right page. |
 | ![A panel connected to a server over SSH](docs/screenshots/16-ssh.png) | |
 | **Remote servers** (Ctrl-X s, desktop app): a panel on a server over SSH; F5/F6 copy and move between your disk and the server, F4 edits on the server. | |
+| ![A panel on an S3 bucket next to a local folder](docs/screenshots/19-s3.png) | ![Quick view of a SQLite table as a grid](docs/screenshots/21-sqlite-table.png) |
+| **S3 buckets** (Ctrl-X 3, desktop app): `s3://logs/2026/11/` on AWS, or on MinIO, Ceph, Garage, R2, Wasabi with a profile and an endpoint URL. Read and write like SSH. Only one level is listed, 1000 entries at a time, so a bucket of millions of objects opens as fast as a small one. | **SQLite**: Enter opens a database as a read-only folder: `schema.sql`, `tables/*.csv`, `views/*.csv`. F3 and Quick view show CSV files as a grid; F5 exports a table. |
+| ![Result of an SQL query](docs/screenshots/20-sqlite-query.png) | |
+| **SQL queries**: inside a database the command line talks to SQLite (`sqlite shop.sqlite>`). The result opens as a grid and is kept in `queries/`. Uses the system `sqlite3` when present, otherwise sql.js (WebAssembly). | |
 | ![A message of an mbox opened as a folder, two attachments marked](docs/screenshots/17-mail-folder.png) | ![Preview of an .eml with headers and the HTML message](docs/screenshots/18-mail-preview.png) |
 | **Mail files**: Enter opens an `.eml`, an `.mbox` (one folder per message) or an Outlook `.msg` as a read-only folder of the text, the HTML and the attachments; F5 copies attachments out, Ctrl-X u extracts everything. | **Mail preview** (F3): headers and the formatted message. Remote images and scripts are never loaded, so opening a message does not tell the sender you read it. |
 
@@ -108,6 +112,7 @@ icons/              app icon (icon.svg is the source, the PNGs are generated)
 CLAUDE.md           instructions Claude follows to publish, install and change the app
 tests/harness.py    fake Claude desktop API to test LIVE DISK mode in a browser
 tests/fakebin/ssh   fake ssh that runs "remote" commands in a local folder
+tests/fakebin/aws   fake aws CLI: the S3 commands the app uses, on a local folder
 tests/smoke.py      Playwright smoke test
 tests/mailfixtures.py sample .eml, .mbox and Outlook .msg files for the tests
 docs/screenshots.py regenerates the screenshots in docs/screenshots/
@@ -130,7 +135,9 @@ The script is one `{ … }` block split into sections marked with `/* ----------
 | quick view | preview in the other panel |
 | archives | tar reader and writer, gzip through `CompressionStream`, zip through JSZip, virtual filesystem `arcFS` |
 | mail | MIME parser on bytes (RFC 2047/2231 names, base64, quoted-printable, any charset `TextDecoder` knows), mbox splitter (mboxrd), OLE compound file and MAPI reader for `.msg` with compressed RTF; each message laid out as files for `arcFS`, mbox messages parsed only when opened |
+| sqlite | engines `sqlCli` (system `sqlite3 -readonly`) and `sqlJs` (sql.js, in memory, `PRAGMA query_only`); `openSqlite` lays a database out as files for `arcFS`; `runSql` for the command line; `csvTable` previews CSV |
 | ssh | `sshFS`: a remote server through the system `ssh` client; virtual paths `/@ssh/<target>/…` |
+| s3 | `s3FS`: buckets through the system `aws` CLI; virtual paths `/@s3/<connection>/<bucket>/<key>`, connections (profile, endpoint) in `prefs.s3c`; paged listing with a "more" row |
 | git | `git` through `childProcess.exec`, file status, virtual filesystem `gitFS` to browse a branch |
 | editor | F4, a textarea with a highlighted overlay |
 | manual | the F1 manual, content in `MAN` (Italian) |
@@ -140,7 +147,7 @@ The script is one `{ … }` block split into sections marked with `/* ----------
 | compare, batch rename | Ctrl-X d, Ctrl-X r |
 | desktop app | install, full-access permission, switch to LIVE DISK |
 
-The key function is `FS(p)`: it returns the right backend for a panel. That is the disk (`Demo` or `Live`), an open archive or mail file (`arcFS`, which can be nested: a zip in a zip, an .eml in an .mbox), a browsed Git branch (`gitFS`) or an SSH server (`sshFS`). `fsAt(path)` does the same for a destination path. All of them provide `list`, `stat`, `exists` and `readBytes`; `Demo`, `Live` and `sshFS` can also write. Every write goes through `roGuard()` first.
+The key function is `FS(p)`: it returns the right backend for a panel. That is the disk (`Demo` or `Live`), an open archive, mail file or SQLite database (`arcFS`, which can be nested: a zip in a zip, an .eml in an .mbox), a browsed Git branch (`gitFS`), an SSH server (`sshFS`) or an S3 connection (`s3FS`). `fsAt(path)` does the same for a destination path. All of them provide `list`, `stat`, `exists` and `readBytes`; `Demo`, `Live`, `sshFS` and `s3FS` can also write. Every write goes through `roGuard()` first.
 
 `mode` says what is in front: `panels`, `view`, `edit`, `con` (demo console), `term` (terminal), `man` (manual). One keyboard listener handles everything, in this order: dialogs, manual, terminal, function keys, console, menus, viewer/editor, panels.
 
@@ -161,7 +168,7 @@ The artifact declares the `db`, `user` and `desktop` capabilities. The desktop p
 
 Demo mode: open `index.html` in a browser (from `file://` too), or serve the folder with `python3 -m http.server` and open `http://localhost:8000`. Outside Claude, `claude.use` does not exist, so the app stays on the demo drive and does not sync.
 
-LIVE DISK mode without the Claude desktop app: `tests/harness.py` injects a fake desktop API that works on a real folder (`/tmp/ng-fakehome`, change it with `NG_FAKE_HOME`). The Trash goes to `/tmp/ng-faketrash`; `git` and the shell are your machine's. `tests/fakebin/ssh` stands in for `ssh` and runs the "remote" commands in `/tmp/ng-fakeserver`.
+LIVE DISK mode without the Claude desktop app: `tests/harness.py` injects a fake desktop API that works on a real folder (`/tmp/ng-fakehome`, change it with `NG_FAKE_HOME`). The Trash goes to `/tmp/ng-faketrash`; `git` and the shell are your machine's. `tests/fakebin/ssh` stands in for `ssh` and runs the "remote" commands in `/tmp/ng-fakeserver`; `tests/fakebin/aws` stands in for the AWS CLI, with buckets as folders of `/tmp/ng-fakes3` (`NG_FAKE_S3`). SQLite tests use your `sqlite3` command, and the sql.js engine through a local HTTP server (WebAssembly does not load from `file://`).
 
 ```
 pip install playwright && playwright install chromium
@@ -170,11 +177,11 @@ python3 tests/smoke.py
 python3 docs/screenshots.py
 ```
 
-The smoke test builds the fake folder with a small Git repository, then checks the demo drive, console, `tar`, PDF preview, manual, LIVE DISK mode, app icon, Git status, browsing a branch, an SSH connection and an upload, and the mail reader: attachments copied out of an .eml and a .msg byte for byte, an .mbox with a latin-1 base64 message, nested messages, the HTML preview with remote images blocked, and extracting a whole mailbox. If `extract_msg` is installed, the sample .msg is also read back with it as an independent check. Screenshots go to `tests/out/`.
+The smoke test builds the fake folder with a small Git repository, then checks the demo drive, console, `tar`, PDF preview, manual, LIVE DISK mode, app icon, Git status, browsing a branch, an SSH connection and an upload, and the mail reader: attachments copied out of an .eml and a .msg byte for byte, an .mbox with a latin-1 base64 message, nested messages, the HTML preview with remote images blocked, and extracting a whole mailbox; S3 (download, upload, folder upload, mkdir, rename, delete, a 2500-object prefix paged by 1000, bucket list, profile and endpoint, missing credentials); SQLite (folder layout, grid preview, a 20000-row export identical to `sqlite3` output, queries, read-only refusal, a `.db` that is not SQLite, sql.js on the demo drive). If `extract_msg` is installed, the sample .msg is also read back with it as an independent check. Screenshots go to `tests/out/`.
 
 ## Open ideas
 
-Directory hotlist (Ctrl-\\), quick search by typing (Ctrl-S), directory history, "Find file" with results in a panel, chmod and symlinks, pipes in the demo console, side-by-side diff of two files, selection with Shift+arrows, an English version of the manual.
+Directory hotlist (Ctrl-\\), quick search by typing (Ctrl-S), directory history, "Find file" with results in a panel, chmod and symlinks, pipes in the demo console, side-by-side diff of two files, selection with Shift+arrows, an English version of the manual, SQLite in write mode (with a confirmation before each change), S3 presigned links and bucket creation.
 
 ## License
 
