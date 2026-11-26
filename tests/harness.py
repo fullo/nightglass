@@ -5,7 +5,7 @@
 Injects window.claude.use('desktop') backed by a real folder on this machine
 (FAKE_HOME), so the LIVE DISK mode can be tested in Chromium with Playwright.
 fs.*, shell.trashItem (moves into FAKE_TRASH), childProcess.exec (real shell,
-used by git) and a fake pty are provided.
+used by git) and a minimal pty that runs each line through the real shell are provided.
 """
 import os, base64, shutil, subprocess
 
@@ -60,7 +60,7 @@ writeFile:(p,d,e)=>typeof d==='string'?call('writeFile',p,d,'utf8'):call('writeF
 os:{homedir:async()=>'__HOME__',username:async()=>'tester',hostname:async()=>'testbox',platform:async()=>'linux',tmpdir:async()=>'/tmp'},
 shell:{trashItem:p=>call('trash',p),openPath:async p=>console.log('OPEN',p),showItemInFolder:async p=>console.log('REVEAL',p)},
 childProcess:{exec:(c,o)=>window.__sh(c,o||{})},
-pty:{spawn:(f,a,o)=>{let cb=()=>{};window.__ptyLog=[];return {pid:Promise.resolve(1),onData:c=>{cb=c;setTimeout(()=>c('fake shell in '+o.cwd+'\r\n$ '),10)},onExit(){},onError(){},write:async d=>{window.__ptyLog.push(d);cb(d.replace(/\r/g,'\r\n$ '))},resize:async()=>{},kill:async()=>{}}}}};
+pty:{spawn:(f,a,o)=>{let cb=()=>{},buf='';window.__ptyLog=[];return {pid:Promise.resolve(1),onData:c=>{cb=c;setTimeout(()=>c('$ '),10)},onExit(){},onError(){},write:async d=>{window.__ptyLog.push(d);for(const ch of d){if(ch==='\r'){cb('\r\n');const line=buf;buf='';if(line.trim()){const r=await window.__sh(line,{});cb((r.stdout+r.stderr).replace(/\n/g,'\r\n'))}cb('$ ')}else if(ch==='\x7f'){if(buf){buf=buf.slice(0,-1);cb('\b \b')}}else{buf+=ch;cb(ch)}}},resize:async()=>{},kill:async()=>{}}}}};
 window.claude={use:async n=>n==='desktop'?D:null};})();
 '''.replace('__HOME__', FAKE_HOME)
 

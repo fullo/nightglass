@@ -4,6 +4,41 @@ File manager a due pannelli sul modello di Midnight Commander, pubblicato come a
 
 Il manuale utente è dentro l'app (F1, in italiano). Questo file è per chi mette mano al codice.
 
+## Funzionalità
+
+![Due pannelli in stile Midnight Commander, con due file marcati](docs/screenshots/01-panels.png)
+
+Due pannelli, barra dei menu, riga di comando e tasti F1–F10 come in MC. Tab cambia pannello, Ctrl-T o Ins marcano i file, F5/F6/F7/F8 copiano, spostano, creano cartelle e cancellano (sul disco vero F8 sposta nel Cestino).
+
+| | |
+|---|---|
+| ![Visualizzatore con evidenziazione della sintassi](docs/screenshots/03-viewer-code.png) | ![Anteprima di un PDF](docs/screenshots/04-preview-pdf.png) |
+| **F3 visualizzatore**: testo con evidenziazione della sintassi in circa 35 linguaggi. | **Anteprime**: immagini (anche TIFF), PDF, DOCX, ODT/ODS/ODP, audio e video. |
+| ![Editor con evidenziazione](docs/screenshots/05-editor.png) | ![Editor esadecimale](docs/screenshots/06-hex-editor.png) |
+| **F4 editor**: salva con F2, mantiene a capo CRLF e BOM. | **Editor esadecimale** (F3 › F4 › F2): byte modificati in rosso, F6 salva, F7 cerca byte. |
+| ![Quick view di un documento ODT](docs/screenshots/07-quick-view.png) | ![Rinomina in blocco con regex](docs/screenshots/08-batch-rename.png) |
+| **Quick view** (C-x q): l'altro pannello mostra l'anteprima del file sotto il cursore. | **Rinomina in blocco** (C-x r): regex, contatori, date, anteprima con conflitti, annullabile. |
+| ![Console con ls, grep e tree](docs/screenshots/02-console.png) | ![Navigazione dentro un archivio tgz](docs/screenshots/09-archive.png) |
+| **Console** (disco demo): ls, cat, grep, find, tree, du, tar, con `>` e `>>`. | **Archivi**: Invio entra in tar/tgz/zip, F5 estrae, C-x p crea, C-x u estrae tutto. |
+| ![Elenco dei branch Git](docs/screenshots/10-git-branches.png) | ![Branch sfogliato in sola lettura](docs/screenshots/11-git-browse.png) |
+| **Git** (C-x g): branch attuale nel titolo, stato dei file (M, ?), elenco dei branch. | **Sfogliare un branch** in sola lettura senza checkout; a destra la copia di lavoro. |
+| ![Terminale vero con Ctrl-O](docs/screenshots/14-terminal.png) | ![Manuale integrato](docs/screenshots/13-manual.png) |
+| **Terminale** (Ctrl-O, app desktop): la shell vera nella cartella del pannello. | **Manuale** (F1, in italiano): indice, collegamenti, ricerca, contestuale. |
+
+**Skin**: 12 schemi colore, che valgono anche per il codice e il terminale. Qui Dracula, Eclipse e Neon:
+
+| | | |
+|---|---|---|
+| ![Skin Dracula](docs/screenshots/12-skin-dracula.png) | ![Skin Eclipse](docs/screenshots/12-skin-eclipse.png) | ![Skin Neon](docs/screenshots/12-skin-neon.png) |
+
+<img src="docs/screenshots/15-phone.png" alt="Su telefono un pannello alla volta" width="260" align="right">
+
+**Telefono**: un pannello alla volta, tasti funzione su due righe, Tab per passare all'altro pannello.
+
+Gli screenshot si rigenerano con `python3 docs/screenshots.py` (stessi requisiti dei test).
+
+<br clear="right">
+
 ## Struttura
 
 ```
@@ -12,6 +47,7 @@ vendor/             librerie di terze parti, caricate su richiesta (vedi THIRD_P
 icons/              icona dell'app (icon.svg è il sorgente, i PNG sono generati)
 tests/harness.py    finta API desktop per provare la modalità LIVE DISK nel browser
 tests/smoke.py      test di fumo con Playwright
+docs/screenshots.py rigenera gli screenshot del README in docs/screenshots/
 ```
 
 Nessun build: si modifica `index.html` e si ricarica.
