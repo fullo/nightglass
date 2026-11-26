@@ -145,6 +145,8 @@ body.term #tm{display:block}
 .docf{width:100%;flex:1;min-height:60vh;border:0;background:#fff}
 .qvb .docf{min-height:calc(100% - 20px);height:calc(100% - 20px)}
 .pvn{color:var(--hd);white-space:pre-wrap}
+.mlh{margin:0;font:inherit;white-space:pre-wrap;overflow-wrap:anywhere;width:100%;color:var(--hd)}.mlh.b{color:inherit}
+.pvb .mlh+.mlh,.qvb .mlh+.mlh{border-top:1px solid var(--fr);padding-top:8px}
 .pvn.e{color:#e5484d}
 #ovb .hx{position:relative}
 #ovb .hx pre{position:absolute;left:0;right:0;margin:0}
@@ -610,7 +612,7 @@ function render(p){
  const el=p.el,on=act===p.i,rowsEl=el.querySelector('.rows'),n=Math.max(1,Math.floor(rowsEl.clientHeight/(coarse?28:20)));
  if(p.cur<p.top)p.top=p.cur;if(p.cur>=p.top+n)p.top=p.cur-n+1;p.top=Math.max(0,Math.min(p.top,Math.max(0,p.list.length-n)));
  el.classList.toggle('act',on);
- el.querySelector('.ttl').innerHTML=p.arc?`<span> ⌸ ${esc(base(p.arc.root))}:${esc('/'+relOf(p.arc.root,p.path))} (archive) </span>`:p.gref?`<span> ⎇ ${esc(p.gref.ref)}:${esc('/'+relOf(p.gref.root,p.path))} (read-only) </span>`:`<span> ${isSsh(p.path)?'⇄ ':''}${esc(shortP(p.path))}${p.git?' ⎇ '+esc(p.git.branch):''} </span>`;
+ el.querySelector('.ttl').innerHTML=p.arc?`<span> ${p.arc.mail?'✉':'⌸'} ${esc(base(p.arc.root))}:${esc('/'+relOf(p.arc.root,p.path))} (${p.arc.mail?'mail, read-only':'archive'}) </span>`:p.gref?`<span> ⎇ ${esc(p.gref.ref)}:${esc('/'+relOf(p.gref.root,p.path))} (read-only) </span>`:`<span> ${isSsh(p.path)?'⇄ ':''}${esc(shortP(p.path))}${p.git?' ⎇ '+esc(p.git.branch):''} </span>`;
  const ar=k=>p.sortK===k?(p.sortD>0?'↓':'↑'):'';
  el.querySelector('.cols').innerHTML=`<button data-s="name">Name${ar('name')}</button><button data-s="size" class="c2h">Size${ar('size')}</button><button data-s="mtime" class="c3">Modify time${ar('mtime')}</button>`;
  rowsEl.innerHTML=p.list.slice(p.top,p.top+n).map((x,k)=>{const i=p.top+k,t=p.tag.has(x.path);const g=gitMark(p,x);return `<div class="row${x.dir?' d':''}${t?' t':''}${g?(g==='?'?' gu':' gm'):''}${on&&i===p.cur?' cur':''}" data-i="${i}"><span class="c1">${esc((t?'*':x.dir?(g==='*'||g==='?'?g:'/'):x.link?'@':g||' ')+x.name)}</span><span class="c2">${x.up?'UP--DIR':x.dir?'&lt;DIR&gt;':esc(fsize(x.size))}</span><span class="c3">${x.up?'':esc(ftime(x.mtime))}</span></div>`}).join('');
@@ -624,7 +626,7 @@ function renderAll(){render(P[0]);render(P[1]);setPrompt();$('#mode').textConten
 async function reload(p,focus){
  let path=p.path,ents=[];
  if(p.qv)return render(p);
- if(p.arc&&!under(path,p.arc.root))p.arc=null;
+ while(p.arc&&!under(path,p.arc.root))p.arc=p.arc.prev||null;
  if(p.gref&&!under(path,p.gref.root))p.gref=null;
  for(;;){try{ents=await FS(p,path).list(path);break}catch(e){const up=parent(path);if(!up||(p.gref&&path===p.gref.root)){if(p.gref){p.gref=null;continue}ents=[];break}path=up}}
  if(path!==p.path){p.path=path;p.tag.clear()}
@@ -633,7 +635,7 @@ async function reload(p,focus){
 }
 async function reloadBoth(focus){await reload(AP(),focus);await reload(OP())}
 async function cd(p,path){
- if(p.arc&&!under(path,p.arc.root))p.arc=null;
+ while(p.arc&&!under(path,p.arc.root))p.arc=p.arc.prev||null;
  if(p.gref&&!under(path,p.gref.root))p.gref=null;
  let ents;try{ents=await FS(p,path).list(path)}catch(e){return err('Cannot change directory',`${shortP(path)}\n${nice(e)}`)}
  const prev=p.path;p.path=path;p.git=p.gref||p.arc||isSsh(path)?null:await gitInfo(path);p.ents=ents;p.tag.clear();p.cur=0;p.top=0;
@@ -649,7 +651,7 @@ const whatOf=s=>s.length===1?`${s[0].dir?'directory':'file'} "${s[0].name}"`:`${
 async function enter(){
  const x=CUR();if(!x)return;
  if(x.dir)return cd(AP(),x.path);
- if(arcType(x.name)&&!x.link)return enterArchive(AP(),x);
+ if((arcType(x.name)||mailType(x.name))&&!x.link)return enterArchive(AP(),x);
  if(live()&&!AP().gref&&!AP().arc&&!isSsh(x.path)){try{await Live.open(x.path);hint('Opened '+x.name+' in its app')}catch(e){err('Open',nice(e))}}
  else view(x);
 }
@@ -721,7 +723,7 @@ async function newFileDlg(){
 
 /* ---------- previews: images, TIFF, PDF, DOCX, ODF, audio/video ---------- */
 const MEDIA={mp4:'video/mp4',m4v:'video/mp4',webm:'video/webm',mov:'video/quicktime',mp3:'audio/mpeg',wav:'audio/wav',ogg:'audio/ogg',oga:'audio/ogg',m4a:'audio/mp4',flac:'audio/flac',aac:'audio/aac'};
-const pkind=n=>{const e=ext(n);return IMG[e]?'img':e==='tif'||e==='tiff'?'tiff':e==='pdf'?'pdf':e==='docx'?'docx':e==='odt'||e==='ods'||e==='odp'?'odf':MEDIA[e]?'media':null};
+const pkind=n=>{const e=ext(n);return IMG[e]?'img':e==='tif'||e==='tiff'?'tiff':e==='pdf'?'pdf':e==='docx'?'docx':e==='odt'||e==='ods'||e==='odp'?'odf':MEDIA[e]?'media':mailType(n)?'mail':null};
 const libs={};
 function lib(src,glob){return libs[glob]||(libs[glob]=(window[glob]?Promise.resolve():loadScript(src)).then(()=>{if(!window[glob])throw new Error('EIO: '+glob+' did not load');return window[glob]}))}
 const ab=u=>u.buffer.slice(u.byteOffset,u.byteOffset+u.byteLength);
@@ -761,6 +763,7 @@ async function renderPreview(box,name,u,kind,tok){
    doc.destroy();
   }
   else if(kind==='docx'){const M=await lib('vendor/mammoth.browser.min.js','mammoth');const r=await M.convertToHtml({arrayBuffer:ab(u)});if(tok.dead)return clean;docFrame(box,r.value||'<p>(empty)</p>')}
+  else if(kind==='mail')mailPreview(box,name,u,!!tok.quick);
   else if(kind==='odf'){const Z=await lib('vendor/jszip.min.js','JSZip');const z=await Z.loadAsync(u),f=z.file('content.xml');if(!f)throw new Error('not an OpenDocument file');const x=new DOMParser().parseFromString(await f.async('string'),'application/xml');if(tok.dead)return clean;docFrame(box,odfHtml(x))}
  }catch(e){note('Cannot preview: '+String(e&&e.message||e),1)}
  return clean;
@@ -776,7 +779,7 @@ async function view(x){
  if(st.size>16*1048576)return err('View',`File too large to view here (${fsz(st.size)})`+(live()&&!AP().gref?'.\nPress Enter to open it in its app.':''));
  let u;try{u=await F.readBytes(x.path)}catch(e){return err('View',`Cannot open "${shortP(x.path)}"\n${nice(e)}`)}
  const t=decode(u,false),pk=pkind(x.name);
- V={path:x.path,name:x.name,ro:!!AP().gref,u:new Uint8Array(u),orig:new Uint8Array(u),text:t&&t.text,pk,mode:pk?'pv':t?'txt':'hex',wrap:false,edit:false,cur:0,nib:0,col:0,dirty:false,clean:null,tok:{}};
+ V={path:x.path,name:x.name,ro:!!(AP().gref||AP().arc),u:new Uint8Array(u),orig:new Uint8Array(u),text:t&&t.text,pk,mode:pk?'pv':t?'txt':'hex',wrap:false,edit:false,cur:0,nib:0,col:0,dirty:false,clean:null,tok:{}};
  openOv('view');renderView();
 }
 function renderView(){
@@ -802,7 +805,7 @@ function viewTop(){
  if(!V)return;const b=$('#ovb'),pc=b.scrollHeight<=b.clientHeight?100:Math.round(b.scrollTop/(b.scrollHeight-b.clientHeight)*100);
  const m=V.mode==='hex'?(V.edit?'HEX EDIT':'HEX'):V.mode==='pv'?'PREVIEW':(V.lang&&hlOn?V.lang.toUpperCase()+' ':'')+(V.wrap?'WRAP':'TEXT');
  const pos=V.mode==='hex'?`Offset 0x${V.cur.toString(16).toUpperCase()} (${V.cur})`:`${pc}%`;
- $('#ovt').innerHTML=`<span>${esc(shortP(V.path))}${V.ro?' · '+esc(AP().gref?AP().gref.ref:'')+' (read-only)':''}</span><span>${V.u.length} bytes</span><span>${m}${V.dirty?' *':''}</span><span>${esc(pos)}</span>`;
+ $('#ovt').innerHTML=`<span>${esc(shortP(V.path))}${V.ro?' · '+(AP().gref?esc(AP().gref.ref)+' ':'')+'(read-only)':''}</span><span>${V.u.length} bytes</span><span>${m}${V.dirty?' *':''}</span><span>${esc(pos)}</span>`;
 }
 $('#ovb').addEventListener('scroll',()=>{if(mode!=='view'||!V)return;if(V.mode==='hex')drawHex();viewTop()});
 $('#ovb').addEventListener('click',e=>{if(mode!=='view'||!V||V.mode!=='hex')return;const s=e.target.closest('[data-o]');if(!s)return;V.cur=+s.dataset.o;V.col=s.dataset.a?1:0;V.nib=0;drawHex();viewTop()});
@@ -820,7 +823,7 @@ function hexKey(e){
  V.cur=Math.max(0,Math.min(Math.max(0,u.length-1),c));ensureHex();drawHex();viewTop();return true;
 }
 async function saveHex(){
- if(V.ro)return err('Save','This file comes from a Git branch and is read-only.');
+ if(V.ro)return err('Save','This file comes from a Git branch, an archive or a mail file, and is read-only.');
  try{await fsAt(V.path).writeBytes(V.path,V.u)}catch(e){await err('Save',`Cannot save "${shortP(V.path)}"\n${nice(e)}`);return false}
  V.orig=new Uint8Array(V.u);V.dirty=false;V.text=null;drawHex();viewTop();hint('Saved '+shortP(V.path));return true;
 }
@@ -910,24 +913,27 @@ async function openArc(root,u,t,mtime){
  let list;
  if(t==='zip'){const Z=await lib('vendor/jszip.min.js','JSZip'),z=await Z.loadAsync(u);list=[];z.forEach((rel,f)=>{list.push({name:rel.replace(/\/+$/,''),dir:f.dir,size:f.dir?null:(f._data&&f._data.uncompressedSize)||0,mtime:f.date?+f.date:0,get:()=>f.async('uint8array')})})}
  else{let d=u;if(t==='tgz'||(u[0]===0x1f&&u[1]===0x8b))d=await gz(u,true);list=tarParse(d)}
- const map=new Map(),kids=new Map([['',new Set()]]);
- const addDir=d=>{if(kids.has(d))return;kids.set(d,new Set());const par=d.includes('/')?d.slice(0,d.lastIndexOf('/')):'';addDir(par);kids.get(par).add(d.slice(d.lastIndexOf('/')+1));if(!map.has(d))map.set(d,{dir:true,size:null,mtime:mtime||0})};
+ return arcFrom(root,t,list,mtime);
+}
+function arcFrom(root,t,list,mtime){const a={root,type:t,map:new Map(),kids:new Map([['',new Set()]]),mtime:mtime||0};addTo(a,list);a.count=list.filter(e=>!e.dir).length;return a}
+function addTo(a,list){
+ const {map,kids}=a,addDir=d=>{if(kids.has(d))return;kids.set(d,new Set());const par=d.includes('/')?d.slice(0,d.lastIndexOf('/')):'';addDir(par);kids.get(par).add(d.slice(d.lastIndexOf('/')+1));if(!map.has(d))map.set(d,{dir:true,size:null,mtime:a.mtime})};
  for(const e of list){const par=e.name.includes('/')?e.name.slice(0,e.name.lastIndexOf('/')):'';addDir(par);if(e.dir){addDir(e.name);map.set(e.name,{...e,dir:true})}else{map.set(e.name,e);kids.get(par).add(e.name.slice(e.name.lastIndexOf('/')+1))}}
- return {root,type:t,map,kids,mtime:mtime||0,count:list.filter(e=>!e.dir).length};
 }
 function arcFS(a){return a.api||(a.api={
  ent(rel){const e=a.map.get(rel);return {name:rel.slice(rel.lastIndexOf('/')+1),path:join(a.root,rel),dir:!!e.dir,size:e.dir?null:e.size,mtime:e.mtime||a.mtime,link:!!e.link}},
- async list(path){const rel=relOf(a.root,path),k=a.kids.get(rel);if(!k)throw new Error('ENOTDIR: '+path);return [...k].map(n=>this.ent(rel?rel+'/'+n:n))},
- async stat(path){if(path===a.root)return {name:base(path),path,dir:true,size:null,mtime:a.mtime};const rel=relOf(a.root,path);return a.map.has(rel)?this.ent(rel):null},
+ async list(path){const rel=relOf(a.root,path);if(a.expand)a.expand(rel);const k=a.kids.get(rel);if(!k)throw new Error('ENOTDIR: '+path);return [...k].map(n=>this.ent(rel?rel+'/'+n:n))},
+ async stat(path){if(path===a.root)return {name:base(path),path,dir:true,size:null,mtime:a.mtime};const rel=relOf(a.root,path);if(a.expand)a.expand(rel);return a.map.has(rel)?this.ent(rel):null},
  async exists(path){return !!(await this.stat(path))},
- async readBytes(path){const e=a.map.get(relOf(a.root,path));if(!e)throw new Error('ENOENT: '+path);if(e.dir)throw new Error('EISDIR: '+path);return e.get?await e.get():e.data}
+ async readBytes(path){const rel=relOf(a.root,path);if(a.expand)a.expand(rel);const e=a.map.get(rel);if(!e)throw new Error('ENOENT: '+path);if(e.dir)throw new Error('EISDIR: '+path);return e.get?await e.get():e.data}
 })}
 async function enterArchive(p,x){
  const SF=FS(p),st=await SF.stat(x.path);if(!st)return;
- if(st.size>256*1048576)return err('Archive',`Too large to browse here (${fsz(st.size)})`);
- hint('Reading '+x.name+'…');
- try{const u=await SF.readBytes(x.path);p.arc=await openArc(x.path,u,arcType(x.name),st.mtime)}catch(e){p.arc=null;return err('Archive',`Cannot open "${x.name}"\n${nice(e)}`)}
- await cd(p,x.path);hint(`${x.name}: ${p.arc?p.arc.count:0} files. F5 extracts, F3 views. Read-only.`);
+ const mt=mailType(x.name),T=mt?'Mail':'Archive';
+ if(st.size>256*1048576)return err(T,`Too large to browse here (${fsz(st.size)})`);
+ hint('Reading '+x.name+'…');const prev=p.arc&&under(x.path,p.arc.root)?p.arc:null;
+ try{const u=await SF.readBytes(x.path);p.arc=mt?await openMail(x.path,u,mt,st.mtime):await openArc(x.path,u,arcType(x.name),st.mtime);p.arc.prev=prev}catch(e){p.arc=prev;return err(T,`Cannot open "${x.name}"\n${nice(e)}`)}
+ await cd(p,x.path);hint(`${x.name}: ${p.arc?p.arc.what||p.arc.count+' files':'0 files'}. F5 copies out, F3 views. Read-only.`);
 }
 async function collect(SF,srcs,baseDir,cap=512*1048576){
  const items=[];let total=0;
@@ -951,16 +957,207 @@ async function packDlg(){
  catch(e){err('Pack',`${nice(e)}\n${String(e.message||e)}`)}
 }
 async function unpackDlg(){
- const p=AP(),x=CUR();if(!x||x.up||x.dir||!arcType(x.name))return err('Unpack','Put the cursor on a .tar, .tgz, .tar.gz or .zip file.');
- const o=OP(),stem=x.name.replace(/\.(tar\.gz|tgz|tar|zip|jar)$/i,''),dd=o.gref||o.arc?p.path:o.path;
+ const p=AP(),x=CUR();if(!x||x.up||x.dir||!(arcType(x.name)||mailType(x.name)))return err('Unpack','Put the cursor on a .tar, .tgz, .tar.gz or .zip file, or on a .eml, .mbox or .msg mail file.');
+ const o=OP(),stem=x.name.replace(/\.(tar\.gz|tgz|tar|zip|jar|eml|mbox|mbx|msg)$/i,''),dd=o.gref||o.arc?p.path:o.path;
  const r=await dlg({title:'Unpack',lines:[`Extract "${x.name}" into:`],input:true,def:shortP(join(dd,stem))+'/',buttons:['OK','Cancel']});
  if(!r||r.b!==0||!r.v)return;const dst=abs(r.v);
  if(roPanelAt(dst))return;
  let all=false;const ask=async t=>{if(all)return 'over';const q=await dlg({title:'File exists',err:true,lines:['Target file already exists!',shortP(t)],buttons:['Overwrite','All','Skip','Abort'],defBtn:2});if(!q||q.b===3)return 'abort';if(q.b===1){all=true;return 'over'}return q.b===0?'over':'skip'};
- try{hint('Unpacking…');const SF=FS(p),u=await SF.readBytes(x.path),a=await openArc(x.path,u,arcType(x.name),x.mtime);const ps=await fsAt(dst).stat(parent(dst));if(!ps)throw new Error('ENOENT: '+parent(dst));const n=await copyTree(a.root,dst,ask,arcFS(a));await reloadBoth();hint(n==='abort'?'Unpack aborted':`Extracted ${n} files into ${shortP(dst)}`)}
+ try{hint('Unpacking…');const SF=FS(p),u=await SF.readBytes(x.path),a=mailType(x.name)?await openMail(x.path,u,mailType(x.name),x.mtime):await openArc(x.path,u,arcType(x.name),x.mtime);const ps=await fsAt(dst).stat(parent(dst));if(!ps)throw new Error('ENOENT: '+parent(dst));const n=await copyTree(a.root,dst,ask,arcFS(a));await reloadBoth();hint(n==='abort'?'Unpack aborted':`Extracted ${n} files into ${shortP(dst)}`)}
  catch(e){err('Unpack',`${nice(e)}\n${String(e.message||e)}`)}
 }
-function roPanelAt(dst){for(const q of P){const r=q.arc?q.arc.root:q.gref?q.gref.root:null;if(r&&q.arc&&under(dst,r)){err('Read-only','You cannot write inside an archive.');return true}}return false}
+function roPanelAt(dst){for(const q of P){const r=q.arc?q.arc.root:q.gref?q.gref.root:null;if(r&&q.arc&&under(dst,r)){err('Read-only','You cannot write inside an archive or a mail file.');return true}}return false}
+
+/* ---------- mail: .eml, .mbox, Outlook .msg (read-only) ---------- */
+const mailType=n=>/\.eml$/i.test(n)?'eml':/\.(mbox|mbx)$/i.test(n)?'mbox':/\.msg$/i.test(n)?'msg':null;
+const asc=s=>Uint8Array.from(s,c=>c.charCodeAt(0)&255);
+const CRLF2=asc('\r\n\r\n'),LF2=asc('\n\n'),NLFROM=asc('\nFrom '),NLGT=asc('\n>');
+function bidx(u,pat,from=0,to=u.length){const f=pat[0],n=pat.length,v=to<u.length?u.subarray(0,to):u;for(let i=v.indexOf(f,from);i>=0&&i+n<=to;i=v.indexOf(f,i+1)){let k=1;while(k<n&&u[i+k]===pat[k])k++;if(k===n)return i}return -1}
+function bstr(u,s=0,e=u.length){let r='';for(let i=s;i<e;i+=8192)r+=String.fromCharCode.apply(null,u.subarray(i,Math.min(e,i+8192)));return r}
+function cdec(u,cs){
+ cs=String(cs||'').trim().toLowerCase().replace(/^["']|["']$/g,'');
+ if(/^utf-?8$/.test(cs))return new TextDecoder('utf-8').decode(u);
+ if(cs&&!/^(us-)?ascii$/.test(cs)){try{return new TextDecoder(cs).decode(u)}catch(e){}}
+ try{return new TextDecoder('utf-8',{fatal:true}).decode(u)}catch(e){return new TextDecoder('windows-1252').decode(u)}
+}
+const B64=new Int16Array(256).fill(-1);'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/'.split('').forEach((c,i)=>B64[c.charCodeAt(0)]=i);B64[45]=62;B64[95]=63;
+function b64d(u,s=0,e=u.length){const out=new Uint8Array(Math.ceil((e-s)*3/4)+3);let o=0,acc=0,n=0;for(let i=s;i<e;i++){const v=B64[u[i]];if(v<0){if(u[i]===61)break;continue}acc=(acc<<6)|v;if(++n===4){out[o++]=acc>>16&255;out[o++]=acc>>8&255;out[o++]=acc&255;acc=0;n=0}}if(n===2)out[o++]=acc>>4&255;else if(n===3){out[o++]=acc>>10&255;out[o++]=acc>>2&255}return out.subarray(0,o)}
+function b64len(u,s,e){let n=0;for(let i=s;i<e;i++){if(B64[u[i]]>=0)n++;else if(u[i]===61)break}return Math.floor(n*3/4)}
+function qpd(u,s=0,e=u.length){
+ const out=new Uint8Array(e-s),hx=c=>c>=48&&c<=57?c-48:c>=65&&c<=70?c-55:c>=97&&c<=102?c-87:-1;let o=0;
+ for(let i=s;i<e;i++){const c=u[i];
+  if(c===61){const a=i+2<e?hx(u[i+1]):-1,b=a>=0?hx(u[i+2]):-1;if(b>=0){out[o++]=a*16+b;i+=2;continue}
+   let j=i+1;while(j<e&&(u[j]===32||u[j]===9))j++;if(j>=e){i=j;continue}if(u[j]===10){i=j;continue}if(u[j]===13&&u[j+1]===10){i=j+1;continue}}
+  out[o++]=c}
+ return out.subarray(0,o);
+}
+function ew(s){
+ if(!s||s.indexOf('=?')<0)return s||'';
+ const re=/=\?([^?\s]+?)\?([bBqQ])\?([^?\s]*?)\?=/g;let out='',last=0,m,pend=null;
+ const flush=()=>{if(pend){out+=cdec(Uint8Array.from(pend.b),pend.cs);pend=null}};
+ while((m=re.exec(s))){
+  const gap=s.slice(last,m.index);if(!(pend&&/^\s*$/.test(gap))){flush();out+=gap}
+  const cs=m[1].replace(/\*.*$/,''),b=/b/i.test(m[2])?b64d(asc(m[3])):qpd(asc(m[3].replace(/_/g,' ')));
+  if(pend&&pend.cs.toLowerCase()!==cs.toLowerCase())flush();if(!pend)pend={cs,b:[]};for(const x of b)pend.b.push(x);last=re.lastIndex}
+ flush();return out+s.slice(last);
+}
+function hend(u,s,e){const a=bidx(u,CRLF2,s,e),b=bidx(u,LF2,s,e);if(a>=0&&(b<0||a<b))return [a,a+4];if(b>=0)return [b,b+2];return [e,e]}
+function hdrs(u,s,e){
+ let raw=bstr(u,s,e);if(/[\x80-\xff]/.test(raw))raw=cdec(u.subarray(s,e),'');raw=raw.replace(/\r\n/g,'\n');
+ const list=[];for(const l of raw.split('\n')){if(/^[ \t]/.test(l)&&list.length)list[list.length-1][1]+=' '+l.trim();else{const i=l.indexOf(':');if(i>0)list.push([l.slice(0,i).trim().toLowerCase(),l.slice(i+1).trim()])}}
+ return {raw,get:n=>{const h=list.find(x=>x[0]===n);return h?h[1]:''}};
+}
+function hparams(v){
+ const parts=[];let cur='',q=false;for(let i=0;i<v.length;i++){const c=v[i];if(c==='"'&&v[i-1]!=='\\')q=!q;if(c===';'&&!q){parts.push(cur);cur=''}else cur+=c}parts.push(cur);
+ const value=parts.shift().trim().toLowerCase(),raw={},p={},groups={};
+ for(const x of parts){const i=x.indexOf('=');if(i<0)continue;const k=x.slice(0,i).trim().toLowerCase();let w=x.slice(i+1).trim();if(w[0]==='"')w=w.slice(1,w.endsWith('"')?-1:undefined).replace(/\\(.)/g,'$1');raw[k]=w}
+ for(const k in raw){const m=k.match(/^([^*]+)\*(\d+)?(\*)?$/);if(!m){p[k]=raw[k];continue}(groups[m[1]]=groups[m[1]]||[]).push({n:+(m[2]||0),enc:m[2]===undefined||!!m[3],v:raw[k]})}
+ for(const k in groups){let cs='';const bytes=[];groups[k].sort((a,b)=>a.n-b.n).forEach((g,i)=>{let w=g.v;if(!g.enc){bytes.push(...enc.encode(w));return}if(i===0){const mm=w.match(/^([^']*)'[^']*'([\s\S]*)$/);if(mm){cs=mm[1];w=mm[2]}}w.replace(/%([0-9a-f]{2})|([\s\S])/gi,(z,h,c)=>{if(h)bytes.push(parseInt(h,16));else bytes.push(...enc.encode(c));return ''})});p[k]=cdec(Uint8Array.from(bytes),cs)}
+ for(const k in p)p[k]=ew(p[k]);
+ return {value,p};
+}
+function mimeParse(u,s,e,depth=0){
+ const [h,bs]=hend(u,s,e),H=hdrs(u,s,h),ct=hparams(H.get('content-type')||'text/plain'),cd=hparams(H.get('content-disposition')||'');
+ const part={u,s:bs,e,H,ct:ct.value||'text/plain',cp:ct.p,disp:cd.value,dp:cd.p,cte:(H.get('content-transfer-encoding')||'').trim().toLowerCase(),kids:[]};
+ if(depth<24&&part.ct.startsWith('multipart/')&&ct.p.boundary){
+  const b=enc.encode('--'+ct.p.boundary),pos=[];
+  for(let i=bs;;){const k=bidx(u,b,i,e);if(k<0)break;if(k===bs||u[k-1]===10)pos.push(k);i=k+b.length}
+  for(let j=0;j<pos.length;j++){let a=pos[j]+b.length;if(u[a]===45&&u[a+1]===45)break;while(a<e&&u[a]!==10)a++;a++;
+   let z=j+1<pos.length?pos[j+1]:e;if(z>a&&u[z-1]===10)z--;if(z>a&&u[z-1]===13)z--;if(a<=z)part.kids.push(mimeParse(u,a,z,depth+1))}
+ }
+ return part;
+}
+const pbody=p=>p.cte==='base64'?b64d(p.u,p.s,p.e):p.cte==='quoted-printable'?qpd(p.u,p.s,p.e):p.u.subarray(p.s,p.e);
+const psize=p=>p.cte==='base64'?b64len(p.u,p.s,p.e):p.cte==='quoted-printable'?pbody(p).length:p.e-p.s;
+const ptext=p=>cdec(pbody(p),p.cp.charset).replace(/\r\n/g,'\n');
+function mdate(v){if(!v)return 0;const t=Date.parse(v.replace(/\([^)]*\)/g,' ').replace(/\s+/g,' ').trim());return isNaN(t)?0:t}
+function emlModel(u,s=0,e=u.length){
+ const root=mimeParse(u,s,e),H=root.H;
+ const m={from:ew(H.get('from')),to:ew(H.get('to')),cc:ew(H.get('cc')),bcc:ew(H.get('bcc')),dateRaw:H.get('date'),date:mdate(H.get('date')),subject:ew(H.get('subject')),headers:H.raw,text:null,html:null,atts:[]};
+ const walk=p=>{
+  if(p.kids.length)return p.kids.forEach(walk);
+  const nm=p.dp.filename||p.cp.name||'',body=p.disp!=='attachment'&&!nm;
+  if(body&&p.ct==='text/plain'){m.text=(m.text==null?'':m.text+'\n')+ptext(p);return}
+  if(body&&p.ct==='text/html'&&m.html==null){m.html=ptext(p);return}
+  const a={name:nm,mime:p.ct,cid:(p.H.get('content-id')||'').replace(/^\s*<|>\s*$/g,''),size:psize(p),get:()=>pbody(p)};
+  if(p.ct==='message/rfc822'&&!nm){const b=pbody(p),[hh]=hend(b,0,b.length);a.name=(ew(hdrs(b,0,hh).get('subject'))||'message')+'.eml'}
+  m.atts.push(a)};
+ walk(root);return m;
+}
+/* mbox: one message per "From " line that follows a blank line */
+function mboxSplit(u){
+ const out=[];let st=bstr(u,0,5)==='From '?0:-1;
+ const next=from=>{for(let k=bidx(u,NLFROM,from);k>=0;k=bidx(u,NLFROM,k+1))if(k>0&&(u[k-1]===10||(u[k-1]===13&&u[k-2]===10)))return k;return -1};
+ if(st<0){const k=next(0);st=k<0?-1:k+1}
+ while(st>=0){let a=st;while(a<u.length&&u[a]!==10)a++;a++;const k=next(a);let z=k<0?u.length:k;if(z>a&&u[z-1]===13)z--;if(a<=z)out.push([a,z]);st=k<0?-1:k+1}
+ return out;
+}
+function mboxBytes(u,s,e){
+ const sub=u.subarray(s,e);if(sub[0]!==62&&bidx(sub,NLGT)<0)return sub;
+ const out=new Uint8Array(sub.length);let o=0,ls=true;
+ for(let i=0;i<sub.length;i++){const c=sub[i];if(ls&&c===62){let j=i;while(j<sub.length&&sub[j]===62)j++;if(sub[j]===70&&sub[j+1]===114&&sub[j+2]===111&&sub[j+3]===109&&sub[j+4]===32){ls=false;continue}}out[o++]=c;ls=c===10}
+ return out.subarray(0,o);
+}
+/* Outlook .msg: OLE compound file holding MAPI properties */
+function cfbParse(u){
+ const dv=new DataView(u.buffer,u.byteOffset,u.byteLength),r32=o=>o+4<=u.length?dv.getUint32(o,true):0xFFFFFFFE,r16=o=>dv.getUint16(o,true);
+ if(u.length<512||r32(0)!==0xE011CFD0||r32(4)!==0xE11AB1A1)throw new Error('EINVAL: not an Outlook .msg file (no OLE header)');
+ const ss=1<<r16(30),ms=1<<r16(32),nFat=r32(44),dir0=r32(48),cut=r32(56),mf0=r32(60),nMf=r32(64),per=ss/4,so=n=>(n+1)*ss,END=0xFFFFFFFA;
+ const fs=[];for(let i=0;i<109&&fs.length<nFat;i++)fs.push(r32(76+i*4));
+ for(let d=r32(68),g=0;d<END&&fs.length<nFat&&g++<1e5;d=r32(so(d)+ss-4))for(let i=0;i<per-1&&fs.length<nFat;i++)fs.push(r32(so(d)+i*4));
+ const fat=new Uint32Array(fs.length*per);fs.forEach((s,i)=>{for(let k=0;k<per;k++)fat[i*per+k]=r32(so(s)+k*4)});
+ const chain=(st,t)=>{const o=[];for(let n=st,g=0;n<END&&n<t.length&&g++<=t.length;n=t[n])o.push(n);return o};
+ const rd=(st,size)=>{const c=chain(st,fat),b=new Uint8Array(c.length*ss);c.forEach((s,i)=>b.set(u.subarray(so(s),Math.min(u.length,so(s)+ss)),i*ss));return size==null?b:b.subarray(0,size)};
+ const db=rd(dir0),ents=[],u16=new TextDecoder('utf-16le');
+ for(let o=0;o+128<=db.length;o+=128){const d=new DataView(db.buffer,db.byteOffset+o,128),nl=Math.min(64,d.getUint16(64,true));ents.push({name:nl>2?u16.decode(db.subarray(o,o+nl-2)):'',type:db[o+66],l:d.getUint32(68,true),r:d.getUint32(72,true),c:d.getUint32(76,true),st:d.getUint32(116,true),size:d.getUint32(120,true)})}
+ const root=ents[0];if(!root||root.type!==5)throw new Error('EINVAL: damaged .msg file (no root entry)');
+ const mini=rd(root.st,root.size),mb=nMf?rd(mf0):new Uint8Array(0),mdv=new DataView(mb.buffer,mb.byteOffset,mb.byteLength),mfat=new Uint32Array(mb.length>>2);for(let i=0;i<mfat.length;i++)mfat[i]=mdv.getUint32(i*4,true);
+ const stream=e=>{if(e.size<cut){const c=chain(e.st,mfat),b=new Uint8Array(c.length*ms);c.forEach((s,i)=>b.set(mini.subarray(s*ms,s*ms+ms),i*ms));return b.subarray(0,e.size)}return rd(e.st,e.size)};
+ const memo=new Map(),kids=i=>{if(memo.has(i))return memo.get(i);const out=new Map(),seen=new Set(),walk=j=>{if(j>=ents.length||seen.has(j))return;seen.add(j);const x=ents[j];walk(x.l);if(x.type)out.set(x.name.toLowerCase(),j);walk(x.r)};walk(ents[i].c);memo.set(i,out);return out};
+ return {ents,stream,kids};
+}
+const cpName=c=>({65001:'utf-8',1200:'utf-16le',20127:'us-ascii',28591:'iso-8859-1',28592:'iso-8859-2',28595:'iso-8859-5',28597:'iso-8859-7',28605:'iso-8859-15',932:'shift_jis',936:'gbk',949:'euc-kr',950:'big5',20866:'koi8-r',21866:'koi8-u',50220:'iso-2022-jp',51932:'euc-jp',54936:'gb18030'})[c]||(c>=874&&c<=1258?'windows-'+c:'windows-1252');
+const RTFPRE='{\\rtf1\\ansi\\mac\\deff0\\deftab720{\\fonttbl;}{\\f0\\fnil \\froman \\fswiss \\fmodern \\fscript \\fdecor MS Sans SerifSymbolArialTimes New RomanCourier{\\colortbl\\red0\\green0\\blue0\r\n\\par \\pard\\plain\\f0\\fs20\\b\\i\\u\\tab\\tx';
+function rtfDecomp(b){
+ const dv=new DataView(b.buffer,b.byteOffset,b.byteLength),cs=dv.getUint32(0,true),rs=dv.getUint32(4,true),magic=dv.getUint32(8,true);
+ if(magic===0x414c454d)return b.subarray(16,16+rs);if(magic!==0x75465a4c)throw new Error('EINVAL: unknown RTF compression');
+ const dict=new Uint8Array(4096);for(let i=0;i<RTFPRE.length;i++)dict[i]=RTFPRE.charCodeAt(i);
+ const out=new Uint8Array(rs);let w=RTFPRE.length,o=0,p=16;const end=Math.min(b.length,cs+4),put=c=>{if(o<rs)out[o++]=c;dict[w]=c;w=(w+1)&4095};
+ while(p<end){const f=b[p++];for(let bit=0;bit<8&&p<end;bit++){if(f&(1<<bit)){const r=(b[p]<<8)|b[p+1];p+=2;const off=r>>4,len=(r&15)+2;if(off===w)return out.subarray(0,o);for(let k=0;k<len;k++)put(dict[(off+k)&4095])}else put(b[p++])}}
+ return out.subarray(0,o);
+}
+function msgModel(cf,i=0,hsz=32){
+ const K=cf.kids(i),ft=(lo,hi)=>Math.round((hi*4294967296+lo)/1e4-11644473600000);
+ const props=(j,h)=>{const o={},s=cf.kids(j).get('__properties_version1.0');if(s==null)return o;const b=cf.stream(cf.ents[s]),dv=new DataView(b.buffer,b.byteOffset,b.byteLength);for(let p=h;p+16<=b.length;p+=16){const tag=dv.getUint32(p,true),t=tag&0xffff,id=tag>>>16;if(t===2||t===3||t===0xB)o[id]=dv.getInt32(p+8,true);else if(t===0x40)o[id]=ft(dv.getUint32(p+8,true),dv.getUint32(p+12,true))}return o};
+ const sid=(id,t)=>('__substg1.0_'+id.toString(16).padStart(4,'0')+t).toLowerCase();
+ const P=props(i,hsz),cp=cpName(P[0x3FDE]||P[0x3FFD]||1252);
+ const raw=(j,id,t)=>{const s=cf.kids(j).get(sid(id,t));return s==null?null:cf.stream(cf.ents[s])};
+ const str=(j,id)=>{let b=raw(j,id,'001f');if(b)return new TextDecoder('utf-16le').decode(b).replace(/\0+$/,'');b=raw(j,id,'001e');return b?cdec(b,cp).replace(/\0+$/,''):''};
+ const who=(n,a)=>n&&a&&n!==a?`${n} <${a}>`:n||a;
+ const m={subject:str(i,0x37),from:who(str(i,0xC1A)||str(i,0x42),str(i,0x5D01)||str(i,0xC1F)||str(i,0x65)),to:str(i,0xE04),cc:str(i,0xE03),bcc:str(i,0xE02),date:P[0x39]||P[0xE06]||0,headers:str(i,0x7D).replace(/\r\n/g,'\n'),text:str(i,0x1000)||null,html:null,rtf:null,atts:[]};
+ const hb=raw(i,0x1013,'0102');if(hb){const mc=bstr(hb,0,Math.min(hb.length,2048)).match(/charset\s*=\s*["']?([\w.:-]+)/i);m.html=cdec(hb,mc?mc[1]:cp)}else{const h2=str(i,0x1013);if(h2)m.html=h2}
+ const rc=raw(i,0x1009,'0102');if(rc&&rc.length>16){try{m.rtf=rtfDecomp(rc)}catch(e){}}
+ const rec={1:[],2:[],3:[]},sorted=pre=>[...K].filter(([n])=>n.startsWith(pre)).sort((a,b)=>a[0]<b[0]?-1:1);
+ for(const [,j] of sorted('__recip_version1.0_')){const t=props(j,8)[0xC15]||1;(rec[t]||rec[1]).push(who(str(j,0x3001),str(j,0x39FE)||str(j,0x3003)))}
+ if(rec[1].length)m.to=rec[1].join(', ');if(rec[2].length)m.cc=rec[2].join(', ');if(rec[3].length)m.bcc=rec[3].join(', ');
+ for(const [,j] of sorted('__attach_version1.0_')){
+  const KJ=cf.kids(j),nm=str(j,0x3707)||str(j,0x3704)||str(j,0x3001),emb=KJ.get(sid(0x3701,'000d'));
+  if(emb!=null){const sub=msgModel(cf,emb,24);m.atts.push({name:nm||sub.subject||'message',msg:sub});continue}
+  const d=KJ.get(sid(0x3701,'0102'));if(d==null)continue;const e=cf.ents[d];m.atts.push({name:nm,mime:str(j,0x370E),cid:str(j,0x3712),size:e.size,get:()=>cf.stream(e)})}
+ return m;
+}
+/* a message laid out as files */
+const EXT_OF={'image/png':'.png','image/jpeg':'.jpg','image/gif':'.gif','image/webp':'.webp','image/svg+xml':'.svg','application/pdf':'.pdf','text/plain':'.txt','text/html':'.html','text/calendar':'.ics','text/csv':'.csv','message/rfc822':'.eml','application/zip':'.zip','application/msword':'.doc'};
+const safeName=n=>String(n||'').replace(/[\x00-\x1f\x7f]/g,' ').replace(/[\/\\]/g,'∕').replace(/[<>:"|?*]/g,'_').replace(/\s+/g,' ').trim().replace(/[. ]+$/,'').slice(0,120);
+const ymd=t=>{const d=new Date(t);return d.getFullYear()+'-'+p2(d.getMonth()+1)+'-'+p2(d.getDate())};
+function html2text(h){
+ const d=new DOMParser().parseFromString(String(h).replace(/<(br|\/p|\/div|\/tr|\/h[1-6]|\/li|\/table|\/blockquote)\b[^>]*>/gi,'$&\n').replace(/<li\b[^>]*>/gi,'$&• '),'text/html');
+ d.querySelectorAll('script,style,head,title').forEach(x=>x.remove());
+ return (d.body?d.body.textContent:'').replace(/ /g,' ').replace(/[ \t]+\n/g,'\n').replace(/\n{3,}/g,'\n\n').trim();
+}
+function mailHead(m){
+ const r=[['From',m.from],['To',m.to],['Cc',m.cc],['Bcc',m.bcc],['Date',m.dateRaw||(m.date?new Date(m.date).toString():'')],['Subject',m.subject]];
+ if(m.atts.length)r.push(['Attached',m.atts.map(a=>a.msg?(a.name||'message')+' (message)':(a.name||'(no name)')+' ('+fsz(a.size)+')').join(', ')]);
+ return r.filter(x=>x[1]).map(x=>(x[0]+':').padEnd(10)+x[1]).join('\n');
+}
+function mailBodyText(m){return m.text!=null&&m.text.trim()?m.text.replace(/\r\n/g,'\n'):m.html!=null?html2text(m.html):m.rtf?'(The text of this message is only in RTF: see message.rtf.)':'(This message has no text.)'}
+function mailEntries(m,pre,mt,out){
+ const used=new Set(),uniq=n=>{const d=n.lastIndexOf('.'),st=d>0?n.slice(0,d):n,ex=d>0?n.slice(d):'';let b=n,i=2;while(used.has(b.toLowerCase()))b=`${st} (${i++})${ex}`;used.add(b.toLowerCase());return b};
+ const file=(n,data,size,get)=>out.push({name:pre+uniq(n),dir:false,size:size!=null?size:data.length,mtime:mt,data,get});
+ file('message.txt',enc.encode(mailHead(m)+'\n\n'+mailBodyText(m)+'\n'));
+ if(m.html!=null)file('message.html',enc.encode(m.html));
+ if(m.rtf)file('message.rtf',m.rtf);
+ if(m.headers)file('headers.txt',enc.encode(m.headers.replace(/\n*$/,'\n')));
+ m.atts.forEach((a,k)=>{
+  if(a.msg){const d=pre+uniq(safeName(a.name||'message')+' (message)'),t=a.msg.date||mt;out.push({name:d,dir:true,mtime:t});mailEntries(a.msg,d+'/',t,out);return}
+  file(safeName(a.name)||'attachment-'+(k+1)+(EXT_OF[String(a.mime).toLowerCase()]||'.bin'),null,a.size,a.get)});
+}
+function mailModelOf(name,u){const t=mailType(name);return t==='msg'?msgModel(cfbParse(u)):emlModel(u)}
+async function openMail(root,u,t,mtime){
+ if(t!=='mbox'){const m=t==='msg'?msgModel(cfbParse(u)):emlModel(u),list=[];mailEntries(m,'',m.date||mtime,list);const a=arcFrom(root,t,list,mtime);a.mail=true;a.count=m.atts.length;a.what=`${a.count} attachment${a.count===1?'':'s'}`;return a}
+ const rs=mboxSplit(u),w=Math.max(4,String(rs.length).length),msgs=new Map(),list=[];
+ rs.forEach(([s,e],i)=>{const [h]=hend(u,s,e),H=hdrs(u,s,h),dt=mdate(H.get('date')),n=safeName(`${String(i+1).padStart(w,'0')} ${dt?ymd(dt):'----------'} ${ew(H.get('subject'))||'(no subject)'}`);msgs.set(n,{s,e,dt});list.push({name:n,dir:true,mtime:dt||mtime})});
+ const a=arcFrom(root,'mbox',list,mtime),done=new Set();a.mail=true;a.count=rs.length;a.what=`${rs.length} message${rs.length===1?'':'s'}`;
+ a.expand=rel=>{const top=rel.split('/')[0];if(!top||done.has(top))return;done.add(top);const x=msgs.get(top);if(!x)return;const out=[];try{mailEntries(emlModel(mboxBytes(u,x.s,x.e)),top+'/',x.dt||mtime,out)}catch(e){out.push({name:top+'/message.txt',dir:false,data:enc.encode('Cannot read this message: '+(e.message||e)+'\n'),size:0,mtime:x.dt||mtime});out[0].size=out[0].data.length}addTo(a,out)};
+ return a;
+}
+function mailFrame(box,m){
+ let h=m.html;const im=new Map();for(const a of m.atts)if(a.cid&&/^image\//i.test(a.mime||'')&&a.size<5*1048576)im.set(a.cid.toLowerCase(),a);
+ if(im.size)h=h.replace(/(["'(])cid:([^"')\s]+)/gi,(z,q,id)=>{const a=im.get(decodeURIComponent(id).toLowerCase());return a?q+'data:'+a.mime+';base64,'+btoa(bstr(a.get())):z});
+ const f=document.createElement('iframe');f.setAttribute('sandbox','');f.className='docf';f.title='Message';
+ f.srcdoc=`<!DOCTYPE html><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src data:; style-src 'unsafe-inline'; font-src data:"><style>body{font:14px/1.5 system-ui,sans-serif;margin:16px;color:#1d1d1d;background:#fff}img{max-width:100%;height:auto}</style>${h}`;
+ box.appendChild(f);
+}
+function mailPreview(box,name,u,quick){
+ const pre=(t,c)=>{const e=document.createElement('pre');e.className='mlh'+(c?' '+c:'');e.textContent=t;box.appendChild(e)};
+ if(mailType(name)==='mbox'){
+  const rs=mboxSplit(u),n=Math.min(rs.length,quick?200:2000),rows=[];
+  for(let i=0;i<n;i++){const [s,e]=rs[i],[h]=hend(u,s,e),H=hdrs(u,s,h),dt=mdate(H.get('date')),fr=ew(H.get('from')).replace(/\s*<[^>]*>\s*$/,'').replace(/^"|"$/g,'');rows.push(`${String(i+1).padStart(5)}  ${dt?ymd(dt):'----------'}  ${fr.slice(0,28).padEnd(28)}  ${ew(H.get('subject'))||'(no subject)'}`)}
+  pre(`${rs.length} message${rs.length===1?'':'s'} · Enter on the file opens the mailbox as a folder`);pre(rows.join('\n')+(rs.length>n?`\n… ${rs.length-n} more`:''),'b');return;
+ }
+ const m=mailModelOf(name,u);pre(mailHead(m)+(m.html!=null&&/\ssrc\s*=\s*["']?(https?:)?\/\//i.test(m.html)?'\nImages:   remote images are not loaded':''));
+ if(m.html!=null&&!(m.text&&quick))mailFrame(box,m);else pre(mailBodyText(m),'b');
+}
 
 /* ---------- ssh: shell link to a remote server ---------- */
 // Remote paths live under a virtual root, /@ssh/<target>/<remote path>, so the
@@ -1058,7 +1255,7 @@ function gitFS(g){return g.api||(g.api={
  async readBytes(path){const e=await this.stat(path);if(!e)throw new Error('ENOENT: '+path);if(e.dir)throw new Error('EISDIR: '+path);const tmp=join(Live.tmp,`ng-git-${Date.now().toString(36)}.blob`);const r=await git(g.root,['cat-file','blob',e.sha],tmp);if(r.code!==0)throw new Error('EIO: '+r.stderr);try{return await Live.fs.readFile(tmp)}finally{Live.fs.rm(tmp).catch(()=>{})}}
 })}
 const FS=(p,path=p.path)=>p.arc&&under(path,p.arc.root)?arcFS(p.arc):isSsh(path)?fsAt(path):p.gref?gitFS(p.gref):B;
-function roGuard(what){const p=AP();if(p.arc){err(what||'Read-only',`This panel is inside the archive "${base(p.arc.root)}", read-only.\nF5 extracts files from it. Go up with .. to leave it.`);return true}if(!p.gref)return false;err(what||'Read-only',`This panel shows branch "${p.gref.ref}" from Git, read-only.\nF5 copies files out of it. Leave the branch view (Ctrl-X g) to change files.`);return true}
+function roGuard(what){const p=AP();if(p.arc){err(what||'Read-only',`This panel is inside the ${p.arc.mail?'mail file':'archive'} "${base(p.arc.root)}", read-only.\nF5 copies files out of it. Go up with .. to leave it.`);return true}if(!p.gref)return false;err(what||'Read-only',`This panel shows branch "${p.gref.ref}" from Git, read-only.\nF5 copies files out of it. Leave the branch view (Ctrl-X g) to change files.`);return true}
 async function gitBranches(){
  if(!live())return err('Git','Git works in the desktop app, on your real disk.');
  if(!hasGit())return err('Git','Running git needs full access in the desktop app.');
@@ -1178,14 +1375,14 @@ const L_=(id,t)=>`<button class="lk" data-h="${id}">${t}</button>`;
 const kb=(...k)=>k.map(x=>`<kbd>${x}</kbd>`).join(' ');
 const tbl=rows=>`<table>${rows.map(r=>`<tr><td>${r[0]}</td><td>${r[1]}</td></tr>`).join('')}</table>`;
 const MAN=[
-{id:'index',t:'Indice',b:`<p>Nightglass è un file manager a due pannelli costruito sul modello di Midnight Commander (MC). Questo manuale descrive tutto quello che fa. ${kb('F1')} lo apre da qualunque punto, ${kb('Esc')} o ${kb('F10')} lo chiude, ${kb('Backspace')} torna alla pagina precedente.</p><ul>${['intro','screen','move','select','fileops','viewer','hex','editor','quick','batch','compare','archives','git','ssh','cmdline','term','menus','keys','limits'].map(i=>`<li>${L_(i,'')}</li>`).join('')}</ul>`},
+{id:'index',t:'Indice',b:`<p>Nightglass è un file manager a due pannelli costruito sul modello di Midnight Commander (MC). Questo manuale descrive tutto quello che fa. ${kb('F1')} lo apre da qualunque punto, ${kb('Esc')} o ${kb('F10')} lo chiude, ${kb('Backspace')} torna alla pagina precedente.</p><ul>${['intro','screen','move','select','fileops','viewer','hex','editor','quick','batch','compare','archives','mail','git','ssh','cmdline','term','menus','keys','limits'].map(i=>`<li>${L_(i,'')}</li>`).join('')}</ul>`},
 {id:'intro',t:'Disco demo e disco vero',b:`<p>Nightglass lavora in due modi. In alto a destra vedi quale è attivo.</p>
 <h3>DEMO DRIVE</h3><p>Nel browser lavori su un disco finto con file di esempio inventati. Le modifiche restano salvate per te fra una visita e l'altra. Qui funzionano pannelli, visualizzatore, editor, archivi e la console con i comandi base. Non ci sono il terminale vero e Git.</p>
 <h3>LIVE DISK</h3><p>Per lavorare sui file veri del tuo computer:</p><ol><li>apri questo artifact nel Claude desktop app;</li><li>premi <b>Install as app</b> nella riga dei suggerimenti in basso, oppure dal menu Command;</li><li>apri Nightglass dal Dock (Mac) o dal menu Start (Windows);</li><li>premi <b>Grant full access</b> e conferma nella finestra di sistema.</li></ol><p>Il permesso di accesso completo si chiede di nuovo a ogni nuova versione dell'app. Sul disco vero l'app parte dalla tua home: il pannello sinistro mostra la home, quello destro la cartella Documenti.</p>
 <p>${kb('F8')} sul disco vero non cancella: sposta nel Cestino di sistema, da cui puoi recuperare. Sul disco demo invece cancella per sempre.</p>`},
 {id:'screen',t:'Lo schermo',b:`<p>Dall'alto in basso:</p><ul><li><b>Barra dei menu</b>: Left, File, Command, Options, Right. Si apre con ${kb('F9')} o con un clic. Vedi ${L_('menus','Menu e opzioni')}.</li><li><b>Due pannelli</b>: il titolo mostra la cartella. Se la cartella è in un repository Git, accanto c'è il branch (⎇ main). Il pannello attivo ha il titolo evidenziato.</li><li><b>Colonne</b>: Name, Size, Modify time. Un clic sul titolo di una colonna ordina; un secondo clic inverte.</li><li><b>Riga di stato del pannello</b>: nome e dimensione del file sotto il cursore. Se hai file marcati, il loro numero e il peso totale.</li><li><b>Hint</b>: messaggi e suggerimenti. Qui compaiono anche i pulsanti per installare l'app o concedere l'accesso.</li><li><b>Riga di comando</b>: vedi ${L_('cmdline','Riga di comando e console')}.</li><li><b>Tasti funzione</b>: F1–F10, cliccabili.</li></ul>
 <h3>Il primo carattere del nome</h3>${tbl([['<code>/</code>','cartella'],['<code>@</code>','collegamento simbolico'],['<code>*</code>','file marcato'],['<code>M A D R U</code>','Git: modificato, aggiunto, cancellato, rinominato, in conflitto'],['<code>?</code>','Git: non tracciato'],['<code>*</code> su una cartella','Git: modifiche dentro la cartella']])}`},
-{id:'move',t:'Muoversi',b:tbl([[kb('↑','↓'),'file precedente o successivo'],[kb('PgUp','PgDn'),'una pagina in su o in giù'],[kb('Home','End'),'primo o ultimo file (a riga di comando vuota; con testo scritto usa Ctrl-Home e Ctrl-End)'],[kb('Invio'),'entra nella cartella, apre l\'archivio; su un file: lo apre nella sua app (disco vero) o lo visualizza (disco demo)'],[kb('Tab'),'passa all\'altro pannello'],[kb('Ctrl-U'),'scambia i due pannelli'],[kb('Alt-I'),'mostra nell\'altro pannello la stessa cartella'],[kb('Ctrl-R'),'rilegge le cartelle'],[kb('Alt-Invio'),'copia il nome del file sulla riga di comando'],[kb('Alt-P','Alt-N'),'cronologia dei comandi']])+`<h3>Mouse</h3><p>Clic seleziona, doppio clic apre, tasto destro marca o smarca, la rotella scorre.</p><h3>Telefono e tablet</h3><p>Si vede un pannello alla volta: il tasto <b>⇥ Tab</b> nella barra in basso passa all'altro. Tocco seleziona, doppio tocco apre, pressione lunga marca.</p>`},
+{id:'move',t:'Muoversi',b:tbl([[kb('↑','↓'),'file precedente o successivo'],[kb('PgUp','PgDn'),'una pagina in su o in giù'],[kb('Home','End'),'primo o ultimo file (a riga di comando vuota; con testo scritto usa Ctrl-Home e Ctrl-End)'],[kb('Invio'),'entra nella cartella, apre l\'archivio o il file di posta; su un file: lo apre nella sua app (disco vero) o lo visualizza (disco demo)'],[kb('Tab'),'passa all\'altro pannello'],[kb('Ctrl-U'),'scambia i due pannelli'],[kb('Alt-I'),'mostra nell\'altro pannello la stessa cartella'],[kb('Ctrl-R'),'rilegge le cartelle'],[kb('Alt-Invio'),'copia il nome del file sulla riga di comando'],[kb('Alt-P','Alt-N'),'cronologia dei comandi']])+`<h3>Mouse</h3><p>Clic seleziona, doppio clic apre, tasto destro marca o smarca, la rotella scorre.</p><h3>Telefono e tablet</h3><p>Si vede un pannello alla volta: il tasto <b>⇥ Tab</b> nella barra in basso passa all'altro. Tocco seleziona, doppio tocco apre, pressione lunga marca.</p>`},
 {id:'select',t:'Selezionare i file',b:`<p>Quasi tutte le operazioni (copia, spostamento, cancellazione, archivi, rinomina in blocco) lavorano sui file <b>marcati</b>. Se non ce ne sono, lavorano sul file sotto il cursore.</p>`+tbl([[kb('Ctrl-T')+' o '+kb('Ins'),'marca o smarca il file e scende al successivo'],[kb('+'),'marca per gruppo: wildcard come <code>*.pdf</code> o una regex fra barre come <code>/^report_\\d+/i</code>'],[kb('\\'),'smarca per gruppo, con gli stessi modelli'],[kb('*'),'inverte la selezione'],['tasto destro','marca o smarca con il mouse']])+`<p>${kb('+')}, ${kb('\\')} e ${kb('*')} funzionano solo a riga di comando vuota, e i gruppi riguardano i file, non le cartelle. Sui Mac senza tasto Ins usa ${kb('Ctrl-T')}.</p><h3>Esempio: zippare alcuni file</h3><ol><li>marca i file con ${kb('Ctrl-T')} (o tutti i PDF con ${kb('+')} e <code>*.pdf</code>);</li><li>premi ${kb('Ctrl-X')} e poi ${kb('p')};</li><li>scrivi un nome che finisce in <code>.zip</code> e premi Invio.</li></ol><p>Vedi anche ${L_('archives','Archivi')}.</p>`},
 {id:'fileops',t:'Copiare, spostare, cancellare',b:tbl([[kb('F5'),'copia. La destinazione proposta è la cartella dell\'altro pannello. Le cartelle vengono copiate con tutto il contenuto.'],[kb('F6'),'sposta o rinomina. Per rinominare, nella destinazione scrivi il nuovo nome nella stessa cartella.'],[kb('F7'),'crea una cartella'],[kb('F8'),'cancella: sul disco vero sposta nel Cestino di sistema, sul disco demo cancella per sempre'],[kb('Shift-F4'),'crea un file nuovo e lo apre nell\'editor']])+`<p>Se una destinazione finisce con <code>/</code> è trattata come cartella. Con più file marcati la destinazione deve essere una cartella esistente.</p><p>Se un file esiste già, l'app chiede: <b>Overwrite</b> (sovrascrivi questo), <b>All</b> (sovrascrivi tutti), <b>Skip</b> (salta), <b>Abort</b> (fermati). Le cartelle non vengono mai sovrascritte da uno spostamento.</p><p>Per molti file con nomi da cambiare secondo una regola vedi ${L_('batch','Rinomina in blocco')}.</p>`},
 {id:'viewer',t:'Visualizzatore (F3)',b:`<p>${kb('F3')} mostra il file sotto il cursore: testo (con ${L_('editor','evidenziazione della sintassi')} per il codice), anteprima per immagini e documenti, oppure esadecimale per i file binari.</p>`+tbl([[kb('F2'),'testo: manda a capo le righe lunghe; esadecimale: attiva la modifica'],[kb('F4'),'passa all\'esadecimale e torna indietro'],[kb('F5'),'vai a: in esadecimale un offset (<code>0x1F</code>, <code>31</code> o <code>50%</code>), nel testo una riga o una percentuale'],[kb('F7'),'cerca testo, oppure byte esadecimali come <code>ff d8 ff</code>'],[kb('F8'),'per immagini e documenti: passa dall\'anteprima al contenuto grezzo'],[kb('F3')+' '+kb('F10')+' '+kb('Esc')+' '+kb('q'),'esce']])+`<h3>Anteprime</h3><ul><li>immagini: png, jpg, gif, webp, svg, bmp, ico, avif, tif/tiff;</li><li>PDF: fino a 60 pagine;</li><li>documenti: docx, odt, ods, odp (testo, titoli, elenchi e tabelle);</li><li>audio e video: mp3, wav, ogg, m4a, flac, mp4, webm, mov (dipende da cosa sa riprodurre il sistema).</li></ul><p>Il visualizzatore apre file fino a 16 MB. Per file più grandi, sul disco vero, ${kb('Invio')} li apre nella loro app.</p>`},
@@ -1195,13 +1392,14 @@ const MAN=[
 {id:'batch',t:'Rinomina in blocco',b:`<p>${kb('Ctrl-X')} poi ${kb('r')}, oppure File › Batch rename…. Lavora sui file marcati o, se non ce ne sono, su tutto il pannello. L'anteprima mostra il nome vecchio e quello nuovo mentre scrivi, e segna in rosso i conflitti: nomi doppi, file già esistenti, nomi non validi. Finché ci sono conflitti, Rename non procede.</p>`+tbl([['<b>Find</b>','espressione regolare JavaScript. Vuota significa “tutto il nome”.'],['<b>Replace with</b>','<code>$1</code> <code>$2</code>… gruppi catturati, <code>$&amp;</code> tutta la parte trovata, <code>{n}</code> contatore, <code>{n:3}</code> contatore a 3 cifre, <code>{name}</code> nome originale, <code>{ext}</code> estensione, <code>{date}</code> data di modifica (AAAA-MM-GG)'],['Keep extension','lavora solo sul nome e lascia l\'estensione com\'è (attivo di partenza)'],['Ignore case','la regex ignora maiuscole e minuscole'],['All matches','sostituisce tutte le occorrenze, non solo la prima'],['Case','dopo la sostituzione: keep, lower, UPPER, Title'],['{n} from, step','valore di partenza e passo del contatore, nell\'ordine del pannello']])+`<h3>Esempi</h3>`+`<table><tr><td><b>Find</b></td><td><b>Replace with</b></td><td><b>Prima → dopo</b></td></tr>`+[['(vuoto)','<code>foto_{n:3}</code>','IMG_2231.jpg → foto_001.jpg'],['<code>\\s+</code>','<code>_</code>','mio file.txt → mio_file.txt'],['<code>^(\\d{4})-(\\d{2})-(\\d{2})</code>','<code>$3.$2.$1</code>','2026-11-26 note → 26.11.2026 note'],['<code>^</code>','<code>{date}_</code>','report.pdf → 2026-11-20_report.pdf'],['(vuoto), Case: lower','(vuoto)','README.MD → readme.MD (con Keep extension)']].map(r=>`<tr><td>${r[0]}</td><td>${r[1]}</td><td>${r[2]}</td></tr>`).join('')+`</table><p>Gli scambi (a→b e b→a, oppure 1→2 e 2→3) funzionano: l'app passa per nomi temporanei. File › Undo batch rename riporta i nomi di prima dell'ultima rinomina in blocco.</p>`},
 {id:'compare',t:'Confronto cartelle',b:`<p>${kb('Ctrl-X')} poi ${kb('d')}, oppure Command › Compare directories. Confronta i file con lo stesso nome nei due pannelli e marca quelli che mancano dall'altra parte o che sono diversi.</p>`+tbl([['Quick','dimensione e data; se differiscono marca il più recente'],['Size only','solo la dimensione; marca entrambi'],['Thorough','byte per byte (file fino a 64 MB)']])+`<p>Poi ${kb('F5')} copia i file marcati nell'altro pannello. Le sottocartelle non vengono confrontate.</p>`},
 {id:'archives',t:'Archivi: tar, tgz, zip',b:tbl([[kb('Invio')+' su un archivio','ci entra come in una cartella, in sola lettura: .tar, .tgz, .tar.gz, .zip, .jar fino a 256 MB'],[kb('F3'),'dentro l\'archivio visualizza un file'],[kb('F5'),'dentro l\'archivio estrae i file marcati nell\'altro pannello'],[kb('Ctrl-X')+' '+kb('p'),'crea un archivio dai file marcati; il formato dipende dal nome: .tgz, .tar.gz, .tar o .zip'],[kb('Ctrl-X')+' '+kb('u'),'estrae tutto l\'archivio sotto il cursore, di partenza in una cartella con il suo nome nell\'altro pannello'],['..','in cima all\'archivio torna alla cartella vera']])+`<p>Il titolo del pannello mostra <code>⌸ nome.tgz:/percorso (archive)</code>. Dentro un archivio non si può scrivere. Un singolo archivio creato dall'app contiene al massimo 512 MB.</p><p>Nella console del disco demo c'è anche <code>tar</code>: <code>tar -czf out.tgz file…</code>, <code>tar -xzf in.tgz -C cartella</code>, <code>tar -tvf in.tar</code>. Sul disco vero <code>tar</code> è quello del sistema.</p>`},
+{id:'mail',t:'Posta: eml, mbox, msg',b:`<p>Un file di posta si apre come una cartella, in sola lettura, come un archivio. Vale per tre formati:</p>`+tbl([['<code>.eml</code>','un messaggio salvato da quasi tutti i client (Thunderbird, Apple Mail, Gmail con “Scarica messaggio”)'],['<code>.mbox</code>, <code>.mbx</code>','una casella intera: un file con tanti messaggi, come l\'esportazione di Google Takeout o le cartelle di Thunderbird'],['<code>.msg</code>','un messaggio salvato da Outlook']])+`<h3>Cosa c'è dentro</h3>`+tbl([['<code>message.txt</code>','mittente, destinatari, data, oggetto, elenco degli allegati e il testo del messaggio. Se il messaggio è solo in HTML, qui c\'è il testo estratto dall\'HTML.'],['<code>message.html</code>','la versione HTML, se c\'è'],['<code>message.rtf</code>','solo nei .msg: il testo in formato RTF di Outlook'],['<code>headers.txt</code>','tutte le intestazioni originali (in un .msg solo se Outlook le ha salvate)'],['gli allegati','con il loro nome. Un messaggio inoltrato come allegato è un altro <code>.eml</code>, in cui puoi entrare; in un .msg è una cartella “(message)”.']])+`<p>Un <code>.mbox</code> mostra una cartella per messaggio, con numero, data e oggetto: <code>0042 2026-11-20 Riunione di lunedì</code>. Dentro trovi gli stessi file di un .eml. I messaggi vengono letti solo quando entri nella loro cartella, così anche una casella di migliaia di messaggi si apre subito.</p>`+tbl([[kb('Invio'),'entra nel file di posta, o in un messaggio dentro un .mbox'],[kb('F3'),'sul file di posta: anteprima con intestazioni e messaggio impaginato; '+kb('F8')+' mostra il sorgente'],[kb('F5'),'copia gli allegati marcati (o messaggi interi di un .mbox) nell\'altro pannello'],[kb('Ctrl-X')+' '+kb('u'),'estrae tutto in una cartella: per un .mbox, una sottocartella per messaggio'],['..','in cima torna alla cartella vera']])+`<h3>Privacy</h3><p>L'anteprima HTML non carica nulla da internet: le immagini remote, che spesso servono a sapere se e quando hai aperto un messaggio, restano bloccate, e l'intestazione lo segnala. Le immagini allegate al messaggio si vedono. Gli script non vengono eseguiti.</p><p>Sul disco vero ${kb('Invio')} su un .eml lo apre in Nightglass, non nel programma di posta. Per aprirlo nel suo programma usa Command › Open in its app.</p>`},
 {id:'git',t:'Git',b:`<p>Solo sul disco vero, e serve <code>git</code> installato sul computer. Quando entri in una cartella che fa parte di un repository:</p><ul><li>il titolo del pannello mostra il branch attuale (⎇ main);</li><li>i file hanno davanti lo stato (vedi ${L_('screen','Lo schermo')}); i modificati sono colorati, i non tracciati in corsivo;</li><li>la riga di stato del pannello dice “git: modified”, “untracked” e così via.</li></ul>`+tbl([[kb('Ctrl-X')+' '+kb('g'),'elenco dei branch locali e remoti, dal più recente. ● è il branch attuale, ◆ quello che stai sfogliando'],['Browse','sfoglia il branch scelto in sola lettura senza cambiare nulla sul disco: F3 visualizza, F5 copia file fuori, la Quick view funziona'],['Checkout','cambia il branch della copia di lavoro, dopo una conferma. Git rifiuta se ci sono modifiche locali che andrebbero perse; il messaggio di Git compare in una finestra'],[kb('Ctrl-X')+' '+kb('l'),'log degli ultimi 200 commit del file o della cartella sotto il cursore (del branch sfogliato, se ne stai sfogliando uno)']])+`<p>Per uscire dalla vista di un branch: ${kb('Ctrl-X')} ${kb('g')} › <b>Back to the working tree</b>, oppure sali sopra la radice del repository.</p>`},
 {id:'ssh',t:'Server remoti (SSH)',b:`<p>Come la “Shell link” di MC: un pannello si collega a un server via SSH e lo usi come una cartella locale. Funziona solo nell'app desktop e usa il programma <code>ssh</code> del tuo computer, con le tue chiavi, l'ssh-agent e il file <code>~/.ssh/config</code>.</p>`+tbl([[kb('Ctrl-X')+' '+kb('s'),'apre la Shell link nel pannello attivo (oppure Left/Right › Shell link)'],['<code>user@host</code>','si collega e parte dalla home sul server'],['<code>user@host:2222/var/www</code>','porta diversa e cartella di partenza'],['un alias','qualunque nome definito in <code>~/.ssh/config</code>'],['<code>cd sh://user@host/percorso</code>','lo stesso dalla riga di comando']])+`<h3>Cosa puoi fare</h3><ul><li>${kb('F5')} copia fra locale e server nei due sensi, anche cartelle intere; ${kb('F6')} sposta (copia e poi cancella l'originale);</li><li>${kb('F3')} visualizza, ${kb('F4')} modifica e salva direttamente sul server, la ${L_('quick','Quick view')} funziona;</li><li>${kb('F7')} crea cartelle, la ${L_('batch','rinomina in blocco')} e gli ${L_('archives','archivi')} funzionano anche sul server;</li><li>${kb('F8')} cancella sul server <b>per sempre</b>: lì non c'è il Cestino, e la finestra di conferma lo ricorda (di partenza è su No);</li><li>i comandi scritti nella riga di comando partono sul server, nella cartella del pannello, e l'output compare nel ${L_('term','terminale')};</li><li><code>..</code> nella cartella <code>/</code> del server chiude il collegamento e torna alla home locale.</li></ul><h3>Password e nuovi server</h3><p>Le operazioni girano senza chiedere nulla. Se il server vuole una password, o se è la prima volta e SSH chiede di confermare la chiave del server, scegli <b>Login in terminal</b>: si apre il terminale, rispondi lì, poi ${kb('Ctrl-O')} e ricollegati. Su Mac e Linux il collegamento resta aperto in background per 10 minuti, quindi la password serve una volta sola. Su Windows servono le chiavi SSH.</p><p>Sul server servono una shell POSIX e i comandi di base (<code>find</code> o <code>stat</code>, <code>cat</code>, <code>mv</code>, <code>cp</code>, <code>rm</code>): va bene qualunque Linux, macOS o BSD.</p>`},
 {id:'cmdline',t:'Riga di comando e console',b:`<p>Puoi scrivere in qualunque momento: i caratteri vanno sulla riga di comando in basso. ${kb('Invio')} esegue. A riga vuota ${kb('Invio')} apre il file sotto il cursore.</p><h3>Comandi interni (sempre)</h3>`+tbl([['<code>cd</code> percorso','cambia la cartella del pannello attivo (<code>~</code> è la home, <code>..</code> sale)'],['<code>mkdir</code>, <code>touch</code>','crea cartelle o file vuoti'],['<code>cp</code>, <code>mv</code>','copia o sposta: l\'ultimo argomento è la destinazione'],['<code>rm</code>','cancella (passa dalla finestra di conferma; sul disco vero va nel Cestino)'],['<code>edit</code>, <code>vi</code>, <code>nano</code>','apre l\'editor; se il file non c\'è lo crea al salvataggio'],['<code>view</code>, <code>less</code>, <code>more</code>','apre il visualizzatore'],['<code>open</code>','apre nella sua app (disco vero)'],['<code>reveal</code>','mostra nel Finder o in Esplora risorse (disco vero)'],['<code>hidden</code>','mostra o nasconde i file nascosti'],['<code>man</code> [argomento]','apre questo manuale, per esempio <code>man git</code>']])+`<h3>Sul disco vero</h3><p>Ogni altro comando va alla tua shell vera, nella cartella del pannello attivo, e l'output compare nel ${L_('term','terminale')}. Attenzione: lì si può lanciare qualunque comando, anche quelli che cancellano file per sempre.</p><h3>Sul disco demo: la console</h3><p>Ci sono <code>ls</code> (-l -a -h -t -S -r), <code>cat</code> (-n), <code>head</code> e <code>tail</code> (-n N), <code>wc</code>, <code>grep</code> (-i -n -r -v -c -l), <code>find</code> (-name -iname -type f|d), <code>tree</code>, <code>du</code> (-s -h), <code>stat</code>, <code>file</code>, <code>echo</code>, <code>pwd</code>, <code>history</code>, <code>clear</code>, <code>rmdir</code>, <code>tar</code>, <code>help</code>. L'output compare in una console a tutto schermo, che si apre da sola o con ${kb('Ctrl-O')}.</p><ul><li><code>*</code> e <code>?</code> si espandono; le virgolette proteggono gli spazi;</li><li><code>comando &gt; file</code> scrive l'output in un file, <code>&gt;&gt;</code> lo aggiunge in fondo;</li><li>nella console: ${kb('Tab')} completa i nomi, ${kb('↑','↓')} richiamano i comandi, ${kb('Ctrl-L')} pulisce, ${kb('Ctrl-O')} o ${kb('F10')} tornano ai pannelli;</li><li>le pipe (<code>|</code>) non ci sono.</li></ul>`},
 {id:'term',t:'Terminale (Ctrl-O)',b:`<p>Sul disco vero ${kb('Ctrl-O')} nasconde i pannelli e mostra la tua shell vera: quella predefinita del Mac o di Linux, PowerShell su Windows. La prima volta parte nella cartella del pannello attivo. ${kb('Ctrl-O')} o ${kb('F10')} tornano ai pannelli, che vengono riletti.</p><p>Quando scrivi un comando non interno nella riga di comando, l'app lo manda alla shell preceduto da un <code>cd</code> nella cartella del pannello. Se la shell termina (per esempio con <code>exit</code>), ${kb('Invio')} ne apre una nuova.</p><p>Passando con ${kb('Ctrl-O')}, la shell non segue da sola la cartella del pannello: se nel terminale fosse aperto un programma come vim o htop, il comando <code>cd</code> finirebbe scritto dentro quel programma.</p><p>Sul disco demo ${kb('Ctrl-O')} apre la ${L_('cmdline','console')}.</p>`},
 {id:'menus',t:'Menu e opzioni',b:tbl([['<b>Left / Right</b>','ordinamento per nome, dimensione o data; ordine inverso; Quick view; Shell link (SSH); Rescan; Home directory'],['<b>File</b>','View, Edit, New file, Copy, Rename/Move, Mkdir, Delete, Pack, Unpack, Batch rename, Undo batch rename, Select/Unselect group, Invert selection, Quit'],['<b>Command</b>','Terminal, Compare directories, Git branches, Git log, Swap panels, Same dir in other panel, Open in its app, Reveal in Finder/Explorer, e l\'eventuale installazione o permesso dell\'app desktop'],['<b>Options</b>','Skin…, Syntax highlighting, Show hidden files'],[kb('F2'),'menu rapido sul file sotto il cursore: View, Edit, Open, Reveal, Pack, Unpack, nome sulla riga di comando, stessa cartella nell\'altro pannello']])+`<p>Nei menu: ${kb('←','→')} cambiano menu, ${kb('↑','↓')} scelgono, ${kb('Invio')} esegue, ${kb('Esc')} chiude.</p><h3>Skin</h3><p>Options › Skin…: Midnight Commander (classico blu), Nightglass, Eclipse, Eclipse Dark, Dracula, Neon (Synthwave), Monokai, Solarized Dark, Solarized Light, Nord, One Dark, Gruvbox Dark. La skin colora anche il terminale e il codice, e resta salvata.</p>`},
-{id:'keys',t:'Tutte le scorciatoie',b:`<h3>Pannelli</h3>`+tbl([[kb('F1'),'manuale'],[kb('F2'),'menu rapido del file'],[kb('F3'),'visualizza'],[kb('F4'),'modifica'],[kb('Shift-F4'),'file nuovo'],[kb('F5'),'copia'],[kb('F6'),'sposta o rinomina'],[kb('F7'),'nuova cartella'],[kb('F8'),'cancella (Cestino sul disco vero)'],[kb('F9'),'menu'],[kb('F10'),'esci (sul disco vero nasconde la finestra)'],[kb('Tab'),'altro pannello'],[kb('Ctrl-T')+' '+kb('Ins'),'marca'],[kb('+')+' '+kb('\\')+' '+kb('*'),'marca, smarca, inverti per gruppo'],[kb('Ctrl-R'),'rileggi'],[kb('Ctrl-U'),'scambia pannelli'],[kb('Alt-I'),'stessa cartella nell\'altro pannello'],[kb('Alt-Invio'),'nome sulla riga di comando'],[kb('Alt-P')+' '+kb('Alt-N'),'cronologia comandi'],[kb('Ctrl-O'),'terminale o console'],[kb('Ctrl-X')+' '+kb('d'),'confronta cartelle'],[kb('Ctrl-X')+' '+kb('r'),'rinomina in blocco'],[kb('Ctrl-X')+' '+kb('q'),'Quick view'],[kb('Ctrl-X')+' '+kb('p'),'crea archivio'],[kb('Ctrl-X')+' '+kb('u'),'estrai archivio'],[kb('Ctrl-X')+' '+kb('s'),'collegamento SSH'],[kb('Ctrl-X')+' '+kb('g'),'branch Git'],[kb('Ctrl-X')+' '+kb('l'),'log Git']])+`<h3>Visualizzatore</h3>`+tbl([[kb('F2'),'a capo / modifica esadecimale'],[kb('F4'),'esadecimale'],[kb('F5'),'vai a'],[kb('F6'),'salva (esadecimale)'],[kb('F7'),'cerca'],[kb('F8'),'anteprima / grezzo'],[kb('F10')+' '+kb('Esc')+' '+kb('q'),'esci']])+`<h3>Editor</h3>`+tbl([[kb('F2')+' '+kb('Ctrl-S'),'salva'],[kb('F10')+' '+kb('Esc'),'esci']])+`<p>Se il browser si prende un tasto funzione, premi ${kb('Esc')} e poi la cifra: ${kb('Esc')} ${kb('5')} equivale a ${kb('F5')}, ${kb('Esc')} ${kb('0')} a ${kb('F10')}.</p>`},
-{id:'limits',t:'Limiti e note',b:`<ul><li>Visualizzatore fino a 16 MB, editor fino a 2 MB, archivi da sfogliare fino a 256 MB, archivi da creare fino a 512 MB.</li><li>In cartelle con più di 1500 elementi, dimensione e data compaiono solo per i primi 1500.</li><li>L'editor esadecimale sovrascrive e basta: non inserisce né toglie byte.</li><li>La console del disco demo non ha pipe; sul disco vero ogni comando non interno va alla shell vera.</li><li>Git, terminale e SSH funzionano solo nell'app desktop, con l'accesso completo.</li><li>Sul server SSH la cancellazione è definitiva, e i nomi di file che contengono a capo o tabulazioni non sono gestiti.</li><li>Il Cestino è quello di sistema: alcuni dischi di rete non ne hanno uno, e in quel caso F8 dà errore invece di cancellare.</li><li>Le anteprime di documenti (docx, odt) mostrano testo, titoli, elenchi e tabelle, non l'impaginazione esatta.</li><li>Ogni nuova versione dell'app desktop richiede di nuovo il permesso di accesso completo.</li></ul>`}
+{id:'keys',t:'Tutte le scorciatoie',b:`<h3>Pannelli</h3>`+tbl([[kb('F1'),'manuale'],[kb('F2'),'menu rapido del file'],[kb('F3'),'visualizza'],[kb('F4'),'modifica'],[kb('Shift-F4'),'file nuovo'],[kb('F5'),'copia'],[kb('F6'),'sposta o rinomina'],[kb('F7'),'nuova cartella'],[kb('F8'),'cancella (Cestino sul disco vero)'],[kb('F9'),'menu'],[kb('F10'),'esci (sul disco vero nasconde la finestra)'],[kb('Tab'),'altro pannello'],[kb('Ctrl-T')+' '+kb('Ins'),'marca'],[kb('+')+' '+kb('\\')+' '+kb('*'),'marca, smarca, inverti per gruppo'],[kb('Ctrl-R'),'rileggi'],[kb('Ctrl-U'),'scambia pannelli'],[kb('Alt-I'),'stessa cartella nell\'altro pannello'],[kb('Alt-Invio'),'nome sulla riga di comando'],[kb('Alt-P')+' '+kb('Alt-N'),'cronologia comandi'],[kb('Ctrl-O'),'terminale o console'],[kb('Ctrl-X')+' '+kb('d'),'confronta cartelle'],[kb('Ctrl-X')+' '+kb('r'),'rinomina in blocco'],[kb('Ctrl-X')+' '+kb('q'),'Quick view'],[kb('Ctrl-X')+' '+kb('p'),'crea archivio'],[kb('Ctrl-X')+' '+kb('u'),'estrai archivio o file di posta'],[kb('Ctrl-X')+' '+kb('s'),'collegamento SSH'],[kb('Ctrl-X')+' '+kb('g'),'branch Git'],[kb('Ctrl-X')+' '+kb('l'),'log Git']])+`<h3>Visualizzatore</h3>`+tbl([[kb('F2'),'a capo / modifica esadecimale'],[kb('F4'),'esadecimale'],[kb('F5'),'vai a'],[kb('F6'),'salva (esadecimale)'],[kb('F7'),'cerca'],[kb('F8'),'anteprima / grezzo'],[kb('F10')+' '+kb('Esc')+' '+kb('q'),'esci']])+`<h3>Editor</h3>`+tbl([[kb('F2')+' '+kb('Ctrl-S'),'salva'],[kb('F10')+' '+kb('Esc'),'esci']])+`<p>Se il browser si prende un tasto funzione, premi ${kb('Esc')} e poi la cifra: ${kb('Esc')} ${kb('5')} equivale a ${kb('F5')}, ${kb('Esc')} ${kb('0')} a ${kb('F10')}.</p>`},
+{id:'limits',t:'Limiti e note',b:`<ul><li>Visualizzatore fino a 16 MB, editor fino a 2 MB, archivi e file di posta da sfogliare fino a 256 MB, archivi da creare fino a 512 MB.</li><li>Le cartelle di Thunderbird sono file mbox senza estensione (per esempio <code>Inbox</code>): per sfogliarle copiale con un nome che finisce in <code>.mbox</code>. Gli archivi di Outlook <code>.pst</code> non sono supportati.</li><li>Nei .msg molto vecchi il testo può esistere solo in RTF: lo trovi in <code>message.rtf</code>, che si apre con Word, TextEdit o LibreOffice.</li><li>In cartelle con più di 1500 elementi, dimensione e data compaiono solo per i primi 1500.</li><li>L'editor esadecimale sovrascrive e basta: non inserisce né toglie byte.</li><li>La console del disco demo non ha pipe; sul disco vero ogni comando non interno va alla shell vera.</li><li>Git, terminale e SSH funzionano solo nell'app desktop, con l'accesso completo.</li><li>Sul server SSH la cancellazione è definitiva, e i nomi di file che contengono a capo o tabulazioni non sono gestiti.</li><li>Il Cestino è quello di sistema: alcuni dischi di rete non ne hanno uno, e in quel caso F8 dà errore invece di cancellare.</li><li>Le anteprime di documenti (docx, odt) mostrano testo, titoli, elenchi e tabelle, non l'impaginazione esatta.</li><li>Ogni nuova versione dell'app desktop richiede di nuovo il permesso di accesso completo.</li></ul>`}
 ];
 MAN.find(s=>s.id==='index').b=MAN.find(s=>s.id==='index').b.replace(/data-h="(\w+)"><\/button>/g,(m,id)=>`data-h="${id}">${MAN.find(s=>s.id===id).t}</button>`);
 let manS={cur:'index',stack:[],prev:'panels'};

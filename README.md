@@ -2,7 +2,7 @@
 
 A two-panel file manager modelled on Midnight Commander. It runs as a [Claude](https://claude.ai) artifact and installs as a desktop app from the Claude desktop app. In a browser it works on a demo drive with made-up files; installed as an app it works on the real files of your computer, with Git, a real terminal and SSH.
 
-![Two Midnight Commander style panels, with two files marked](docs/screenshots/01-panels.png)
+![The two panels in each of the 12 skins, one after the other](docs/screenshots/00-skins.gif)
 
 - [Install it on your own Claude account](#install-it-on-your-own-claude-account)
 - [Features](#features)
@@ -82,8 +82,10 @@ Open `index.html` from the downloaded folder in any web browser. It runs on the 
 | **Terminal** (Ctrl-O, desktop app): your real shell in the panel's folder. | **Manual** (F1, in Italian): contents, links, search, opens on the right page. |
 | ![A panel connected to a server over SSH](docs/screenshots/16-ssh.png) | |
 | **Remote servers** (Ctrl-X s, desktop app): a panel on a server over SSH; F5/F6 copy and move between your disk and the server, F4 edits on the server. | |
+| ![A message of an mbox opened as a folder, two attachments marked](docs/screenshots/17-mail-folder.png) | ![Preview of an .eml with headers and the HTML message](docs/screenshots/18-mail-preview.png) |
+| **Mail files**: Enter opens an `.eml`, an `.mbox` (one folder per message) or an Outlook `.msg` as a read-only folder of the text, the HTML and the attachments; F5 copies attachments out, Ctrl-X u extracts everything. | **Mail preview** (F3): headers and the formatted message. Remote images and scripts are never loaded, so opening a message does not tell the sender you read it. |
 
-**Skins**: 12 colour schemes, which also apply to code and the terminal. Dracula, Eclipse and Neon:
+**Skins**: 12 colour schemes, which also apply to code and the terminal (the animation at the top shows all of them). Dracula, Eclipse and Neon:
 
 | | | |
 |---|---|---|
@@ -107,6 +109,7 @@ CLAUDE.md           instructions Claude follows to publish, install and change t
 tests/harness.py    fake Claude desktop API to test LIVE DISK mode in a browser
 tests/fakebin/ssh   fake ssh that runs "remote" commands in a local folder
 tests/smoke.py      Playwright smoke test
+tests/mailfixtures.py sample .eml, .mbox and Outlook .msg files for the tests
 docs/screenshots.py regenerates the screenshots in docs/screenshots/
 ```
 
@@ -126,6 +129,7 @@ The script is one `{ … }` block split into sections marked with `/* ----------
 | syntax highlighting | highlight.js, coloured from the current skin |
 | quick view | preview in the other panel |
 | archives | tar reader and writer, gzip through `CompressionStream`, zip through JSZip, virtual filesystem `arcFS` |
+| mail | MIME parser on bytes (RFC 2047/2231 names, base64, quoted-printable, any charset `TextDecoder` knows), mbox splitter (mboxrd), OLE compound file and MAPI reader for `.msg` with compressed RTF; each message laid out as files for `arcFS`, mbox messages parsed only when opened |
 | ssh | `sshFS`: a remote server through the system `ssh` client; virtual paths `/@ssh/<target>/…` |
 | git | `git` through `childProcess.exec`, file status, virtual filesystem `gitFS` to browse a branch |
 | editor | F4, a textarea with a highlighted overlay |
@@ -136,7 +140,7 @@ The script is one `{ … }` block split into sections marked with `/* ----------
 | compare, batch rename | Ctrl-X d, Ctrl-X r |
 | desktop app | install, full-access permission, switch to LIVE DISK |
 
-The key function is `FS(p)`: it returns the right backend for a panel. That is the disk (`Demo` or `Live`), an open archive (`arcFS`), a browsed Git branch (`gitFS`) or an SSH server (`sshFS`). `fsAt(path)` does the same for a destination path. All of them provide `list`, `stat`, `exists` and `readBytes`; `Demo`, `Live` and `sshFS` can also write. Every write goes through `roGuard()` first.
+The key function is `FS(p)`: it returns the right backend for a panel. That is the disk (`Demo` or `Live`), an open archive or mail file (`arcFS`, which can be nested: a zip in a zip, an .eml in an .mbox), a browsed Git branch (`gitFS`) or an SSH server (`sshFS`). `fsAt(path)` does the same for a destination path. All of them provide `list`, `stat`, `exists` and `readBytes`; `Demo`, `Live` and `sshFS` can also write. Every write goes through `roGuard()` first.
 
 `mode` says what is in front: `panels`, `view`, `edit`, `con` (demo console), `term` (terminal), `man` (manual). One keyboard listener handles everything, in this order: dialogs, manual, terminal, function keys, console, menus, viewer/editor, panels.
 
@@ -146,7 +150,7 @@ The artifact declares the `db`, `user` and `desktop` capabilities. The desktop p
 
 ### Rules for changes
 
-- Values that come from the disk (file names, contents, git and ssh output) never go into HTML without `esc()`. DOCX and ODT documents render in an `iframe` with `sandbox=""`.
+- Values that come from the disk (file names, contents, git and ssh output) never go into HTML without `esc()`. DOCX and ODT documents render in an `iframe` with `sandbox=""`; HTML mail renders the same way, plus a Content-Security-Policy that allows only `data:` images.
 - Deleting on the real disk means `shell.trashItem`, never `fs.rm` (the one exception: undoing an empty file the app just created).
 - Libraries in `vendor/` load only when needed, through `lib(src, global)`.
 - Keep Midnight Commander's keys where they exist; new ones go under `Ctrl-X <letter>`. Write keys out in full in the interface (`Ctrl-X`, `Alt-I`, `Shift-F4`), not in MC's `C-x` notation.
@@ -161,11 +165,12 @@ LIVE DISK mode without the Claude desktop app: `tests/harness.py` injects a fake
 
 ```
 pip install playwright && playwright install chromium
+pip install compressed_rtf extract_msg   # compressed_rtf builds the sample .msg; extract_msg (optional) double-checks it
 python3 tests/smoke.py
 python3 docs/screenshots.py
 ```
 
-The smoke test builds the fake folder with a small Git repository, then checks the demo drive, console, `tar`, PDF preview, manual, LIVE DISK mode, app icon, Git status, browsing a branch, an SSH connection and an upload. Screenshots go to `tests/out/`.
+The smoke test builds the fake folder with a small Git repository, then checks the demo drive, console, `tar`, PDF preview, manual, LIVE DISK mode, app icon, Git status, browsing a branch, an SSH connection and an upload, and the mail reader: attachments copied out of an .eml and a .msg byte for byte, an .mbox with a latin-1 base64 message, nested messages, the HTML preview with remote images blocked, and extracting a whole mailbox. If `extract_msg` is installed, the sample .msg is also read back with it as an independent check. Screenshots go to `tests/out/`.
 
 ## Open ideas
 

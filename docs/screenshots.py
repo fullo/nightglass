@@ -12,7 +12,7 @@ from playwright.async_api import async_playwright
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / 'tests'))
-import harness
+import harness, mailfixtures
 
 URL = (ROOT / 'index.html').as_uri()
 OUT = ROOT / 'docs' / 'screenshots'
@@ -43,6 +43,7 @@ def fake_home():
         for name, data in [('backup/config.yml', b'port: 8080\n'), ('backup/db/dump.sql', b'CREATE TABLE t (id int);\n'), ('backup/README.txt', b'nightly backup\n')]:
             ti = tarfile.TarInfo(name); ti.size = len(data); t.addfile(ti, io.BytesIO(data))
     open(h + '/backup-2026-11-25.tgz', 'wb').write(b.getvalue())
+    mailfixtures.main(h + '/Mail'); os.remove(h + '/Mail/expected.json')
 
 
 async def row(pg, panel, name):
@@ -64,6 +65,17 @@ async def main():
 
         await k.press('Insert'); await k.press('ArrowDown'); await k.press('Insert'); await pg.wait_for_timeout(200)
         await shot(pg, '01-panels')
+        # 00-skins.gif: the same screen in every skin
+        await pg.click('#mb [data-m="3"]'); await pg.click('#dd [data-mi="0"]'); await pg.wait_for_timeout(200)
+        names = await pg.eval_on_selector_all('#dd [data-mi]', 'e=>e.map(x=>x.textContent.trim())'); await k.press('Escape'); frames = []
+        for i in range(len(names)):
+            await pg.click('#mb [data-m="3"]'); await pg.click('#dd [data-mi="0"]'); await pg.click(f'#dd [data-mi="{i}"]'); await pg.wait_for_timeout(250)
+            await pg.evaluate("document.querySelector('#hint') && (document.querySelector('#hint').style.visibility='hidden')")
+            frames.append(await pg.screenshot()); await pg.evaluate("document.querySelector('#hint') && (document.querySelector('#hint').style.visibility='')")
+        from PIL import Image
+        imgs = [Image.open(io.BytesIO(f)).convert('RGB').quantize(colors=128, method=Image.Quantize.MEDIANCUT, dither=Image.Dither.NONE) for f in frames]
+        imgs[0].save(OUT / '00-skins.gif', save_all=True, append_images=imgs[1:], duration=1400, loop=0, optimize=True)
+        await pg.click('#mb [data-m="3"]'); await pg.click('#dd [data-mi="0"]'); await pg.click('#dd [data-mi="0"]'); await pg.wait_for_timeout(200)
         await cmd('cd /tools'); await row(pg, 'pL', 'scanner.js'); await k.press('F3'); await pg.wait_for_timeout(1200)
         await shot(pg, '03-viewer-code'); await k.press('Escape')
         await k.press('F4'); await pg.wait_for_timeout(800); await shot(pg, '05-editor'); await k.press('F10'); await pg.wait_for_timeout(300)
@@ -114,6 +126,13 @@ async def main():
         await k.press('Tab'); await k.press('Control+x'); await k.press('s'); await lv.wait_for_selector('#din'); await lv.fill('#din', 'deploy@lab-server' + srv + '/www/site'); await k.press('Enter'); await lv.wait_for_timeout(1500)
         await k.press('Tab'); await k.press('Insert'); await k.press('Insert'); await lv.wait_for_timeout(200)
         await shot(lv, '16-ssh')
+        await k.press('Tab'); await lv.click('#pR .row[data-i="0"]'); await k.press('Enter'); await lv.wait_for_timeout(800)
+        await k.press('Tab'); await lcmd('cd ~/Mail'); await row(lv, 'pL', 'inbox.mbox'); await k.press('Enter'); await lv.wait_for_timeout(900)
+        await row(lv, 'pL', '0001'); await k.press('Enter'); await lv.wait_for_timeout(700)
+        await k.press('Tab'); await lcmd('cd ~/Documents'); await k.press('Tab'); await row(lv, 'pL', 'Fattura'); await k.press('Insert'); await row(lv, 'pL', 'logo.png'); await k.press('Insert'); await lv.wait_for_timeout(200)
+        await shot(lv, '17-mail-folder')
+        await lcmd('cd ~/Mail'); await row(lv, 'pL', 'sample.eml'); await k.press('F3'); await lv.wait_for_timeout(1500)
+        await shot(lv, '18-mail-preview'); await k.press('Escape')
 
         ph = await b.new_page(viewport={'width': 390, 'height': 780}, has_touch=True, is_mobile=True)
         await ph.goto(URL); await ph.wait_for_timeout(1200); await shot(ph, '15-phone')

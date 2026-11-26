@@ -1,15 +1,15 @@
 # SPDX-License-Identifier: GPL-2.0-or-later
 # Copyright (C) 2026 Francesco Fullone
-"""Smoke test: demo drive + live disk (fake desktop API) + git + archives.
+"""Smoke test: demo drive + live disk (fake desktop API) + git + archives + ssh + mail.
 
 Needs: Python 3, `pip install playwright`, `playwright install chromium`, git, tar.
 Run from the repository root:  python3 tests/smoke.py
 Screenshots go to tests/out/.
 """
-import asyncio, os, pathlib, shutil, subprocess, sys
+import asyncio, hashlib, json, os, pathlib, shutil, subprocess, sys
 from playwright.async_api import async_playwright
 sys.path.insert(0, os.path.dirname(__file__))
-import harness
+import harness, mailfixtures
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 URL = (ROOT / 'index.html').as_uri()
@@ -25,6 +25,7 @@ def fake_home():
     open(h + '/proj/app.py', 'w').write('print(1)\n'); g('add', '.'); g('commit', '-qm', 'init')
     g('checkout', '-qb', 'feature/x'); open(h + '/proj/app.py', 'w').write('print(2)\n'); g('commit', '-qam', 'x'); g('checkout', '-q', 'main')
     open(h + '/proj/app.py', 'a').write('# local change\n')
+    mailfixtures.main(h + '/mail')
 
 async def run():
     OUT.mkdir(exist_ok=True); fake_home(); fails = []
@@ -69,6 +70,37 @@ async def run():
         await k.press('Tab'); rows = await lv.eval_on_selector_all('#pL .row', 'e=>e.map(x=>x.textContent)')
         await lv.click(f'#pL .row[data-i="{[i for i,r in enumerate(rows) if "note.txt" in r][0]}"]'); await k.press('F5'); await lv.wait_for_selector('#dw.on'); await lv.wait_for_timeout(100); await k.press('Enter'); await lv.wait_for_timeout(1500)
         check(os.path.exists(srv + '/note.txt') and open(srv + '/note.txt', newline='').read() == 'ciao\r\nmondo\r\n', 'ssh: F5 uploads a file byte for byte')
+        # mail: .eml, .msg, .mbox as read-only folders
+        exp = json.load(open(harness.FAKE_HOME + '/mail/expected.json')); sha = lambda f: hashlib.sha256(open(f, 'rb').read()).hexdigest()
+        ml = await b.new_page(viewport={'width': 1300, 'height': 800}); ml.on('pageerror', lambda e: errs.append(str(e)))
+        await harness.attach(ml); await ml.goto(URL); await ml.wait_for_timeout(1500); k = ml.keyboard
+        async def rows(): return await ml.eval_on_selector_all('#pL .row', 'e=>e.map(x=>x.textContent)')
+        async def pick(n): r = await rows(); await ml.click(f'#pL .row[data-i="{[i for i,t in enumerate(r) if n in t][0]}"]')
+        async def go(n, w=800): await pick(n); await k.press('Enter'); await ml.wait_for_timeout(w)
+        async def copy_out(n): await pick(n); await k.press('F5'); await ml.wait_for_selector('#dw.on'); await ml.wait_for_timeout(100); await k.press('Enter'); await ml.wait_for_timeout(900)
+        os.makedirs(harness.FAKE_HOME + '/out'); await k.type('cd ~/mail'); await k.press('Enter'); await ml.wait_for_timeout(600)
+        await k.press('Tab'); await k.type('cd ~/out'); await k.press('Enter'); await ml.wait_for_timeout(500); await k.press('Tab')
+        await go('sample.eml'); t = '\n'.join(await rows())
+        check('(mail, read-only)' in await ml.inner_text('#pL .ttl') and all(x in t for x in ['message.txt', 'message.html', 'Fattura €42.pdf', 'logo.png', 'Verbale della riunione.eml']), 'mail: .eml opens as a folder of body and attachments')
+        await copy_out('Fattura €42.pdf'); check(os.path.exists(harness.FAKE_HOME + '/out/Fattura €42.pdf') and sha(harness.FAKE_HOME + '/out/Fattura €42.pdf') == exp['pdf'], 'mail: F5 copies an .eml attachment out byte for byte')
+        await pick('message.txt'); await k.press('F7'); await ml.wait_for_timeout(400); check('read-only' in (await ml.inner_text('#dw')).lower(), 'mail: writing inside a mail file is refused'); await k.press('Escape'); await ml.wait_for_timeout(200)
+        await go('Verbale della riunione.eml'); check('Verbale della riunione.eml' in await ml.inner_text('#pL .ttl') and 'message.txt' in '\n'.join(await rows()), 'mail: a forwarded .eml inside opens too')
+        await go('..'); await go('..'); check('~/mail' in await ml.inner_text('#pL .ttl'), 'mail: .. leaves nested mail files back to the disk')
+        await go('sample.msg'); t = '\n'.join(await rows())
+        check(all(x in t for x in ['report Q3 €.pdf', 'logo.png', 'message.rtf', 'Café alle 11 (message)']), 'mail: Outlook .msg opens with attachments, RTF and embedded message')
+        await copy_out('report Q3 €.pdf'); check(sha(harness.FAKE_HOME + '/out/report Q3 €.pdf') == exp['pdf'], 'mail: F5 copies a .msg attachment out byte for byte')
+        await pick('message.txt'); await k.press('F3'); await ml.wait_for_timeout(600); v = await ml.inner_text('#ovb')
+        check('Giulia Verdi <giulia@example.com>' in v and 'Paolo Neri' in v and 'il report è pronto' in v, 'mail: .msg sender, recipients and body decoded'); await k.press('Escape'); await ml.wait_for_timeout(200)
+        await go('..'); await go('inbox.mbox'); t = '\n'.join(await rows())
+        check('0001 2026-11-20 Riunione di lunedì' in t and '0002 2026-11-02 Offre spéciale' in t and '0003' in t, 'mail: .mbox lists one folder per message')
+        await go('0002'); await pick('message.txt'); await k.press('F3'); await ml.wait_for_timeout(600); v = await ml.inner_text('#ovb')
+        check('Prix réduits.\nFrom now on' in v, 'mail: mbox message with base64 latin-1 body and >From unescaped'); await k.press('Escape'); await ml.wait_for_timeout(200)
+        await go('..'); await go('..'); await pick('sample.eml'); await k.press('F3'); await ml.wait_for_timeout(1200)
+        src = await ml.eval_on_selector('#ovb iframe', 'f=>f.srcdoc')
+        check("default-src 'none'" in src and 'data:image/png;base64,' in src and 'remote images are not loaded' in await ml.inner_text('#ovb'), 'mail: F3 preview shows HTML with inline images, remote loads blocked')
+        await ml.screenshot(path=str(OUT / 'mail.png')); await k.press('Escape'); await ml.wait_for_timeout(200)
+        await pick('inbox.mbox'); await k.press('Control+x'); await k.press('u'); await ml.wait_for_selector('#dw.on'); await ml.wait_for_timeout(150); await k.press('Enter'); await ml.wait_for_timeout(1500)
+        check(sha(harness.FAKE_HOME + '/out/inbox/0001 2026-11-20 Riunione di lunedì_ ordine del giorno ✓/Fattura €42.pdf') == exp['pdf'], 'mail: Ctrl-X u extracts a whole mailbox')
         print('page errors:', errs or 'none')
         check(not errs, 'no page errors')
         await b.close()
