@@ -78,3 +78,11 @@ Il test crea la cartella finta con un piccolo repository Git, prova disco demo, 
 ## Idee aperte
 
 Hotlist delle cartelle (C-\\), ricerca rapida digitando (C-s), cronologia delle cartelle, "Find file" con risultati nel pannello, chmod/symlink, pipe nella console demo, diff affiancato fra due file, selezione con Shift+frecce.
+
+## Licenza
+
+Copyright (C) 2026 Francesco Fullone.
+
+Nightglass è software libero: puoi ridistribuirlo e modificarlo secondo i termini della GNU General Public License, versione 2 o (a tua scelta) qualunque versione successiva. Il testo completo è in `LICENSE`. Identificativo SPDX: `GPL-2.0-or-later`.
+
+Le librerie in `vendor/` mantengono le loro licenze, elencate in `THIRD_PARTY.md`. pdf.js è sotto Apache-2.0, compatibile con la GPL dalla versione 3: per questo la licenza è "versione 2 o successive" e non "solo versione 2".

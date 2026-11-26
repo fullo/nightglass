@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: GPL-2.0-or-later
+# Copyright (C) 2026 Francesco Fullone
 """Fake Claude desktop API for local tests.
 
 Injects window.claude.use('desktop') backed by a real folder on this machine

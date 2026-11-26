@@ -12,3 +12,7 @@
 I font (IBM Plex Mono, JetBrains Mono, Source Code Pro, Share Tech Mono) arrivano da Google Fonts, licenza SIL Open Font License; non sono inclusi nel repository.
 
 PDF.js è chiamato con `isEvalSupported: false`: tienilo così (CVE-2024-4367 riguarda le versioni precedenti alla 4.2.67 con eval attivo).
+
+## Compatibilità con la licenza del progetto
+
+Il progetto è `GPL-2.0-or-later`. MIT, BSD-2-Clause e BSD-3-Clause sono compatibili con la GPL-2.0. Apache-2.0 (pdf.js) è compatibile con la GPL-3.0 ma non con la sola GPL-2.0: la distribuzione che include pdf.js vale quindi sotto GPL-3.0 o successive. Se togli pdf.js, tutto resta compatibile anche con la sola GPL-2.0.

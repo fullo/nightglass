@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: GPL-2.0-or-later
+# Copyright (C) 2026 Francesco Fullone
 """Smoke test: demo drive + live disk (fake desktop API) + git + archives.
 
 Needs: Python 3, `pip install playwright`, `playwright install chromium`, git, tar.
